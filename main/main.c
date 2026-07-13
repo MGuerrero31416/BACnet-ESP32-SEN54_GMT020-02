@@ -20,6 +20,7 @@
 #include "binary_input.h"
 #include "binary_output.h"
 #include "sen54.h"
+#include "sen54_temperature_compensation.h"
 #include "mstp_rs485.h"
 #include "User_Settings.h"
 
@@ -69,6 +70,9 @@ static const char *TAG = "bacnet";
 #define MSTP_TRANSPORT_BUFFER_SIZE 1024
 #define MSTP_APDU_BUFFER_SIZE 1024
 
+/* Temperature compensation AV instance mappings */
+/* SEN54 temp compensation AV instances defined earlier to allow helper usage */
+
 int override_nvs_on_flash = 0;  /* Exported for AV/BV modules */
 
 
@@ -77,6 +81,34 @@ static void bacnet_receive_task(void *pvParameters);
 static void bacnet_mstp_receive_task(void *pvParameters);
 static void bacnet_cov_task(void *pvParameters);
 static void sen54_task(void *pvParameters);
+
+/* AV instance numbers for SEN54 temperature compensation */
+#define SEN54_TEMP_OFFSET_AV_INSTANCE 8U
+#define SEN54_TEMP_SLOPE_AV_INSTANCE 9U
+#define SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE 10U
+
+static bool sen54_publish_temperature_compensation(void)
+{
+    sen54_temperature_compensation_t params;
+    esp_err_t rc = sen54_temperature_compensation_get(&params);
+    if (rc != ESP_OK) {
+        ESP_LOGE(TAG, "SEN54 temp compensation read failed (%d)", rc);
+        return false;
+    }
+
+    bool u1 = Analog_Value_Present_Value_Set(SEN54_TEMP_OFFSET_AV_INSTANCE, params.offset_c, 16);
+    bool u2 = Analog_Value_Present_Value_Set(SEN54_TEMP_SLOPE_AV_INSTANCE, params.slope, 16);
+    bool u3 = Analog_Value_Present_Value_Set(SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, (float)params.time_constant_s, 16);
+
+    if (!(u1 && u2 && u3)) {
+        ESP_LOGE(TAG, "SEN54 temp compensation: BACnet update failed (u1=%d u2=%d u3=%d)", (int)u1, (int)u2, (int)u3);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "SEN54 temp compensation: offset=%.3f C slope=%.5f time_constant=%u s",
+             params.offset_c, params.slope, (unsigned)params.time_constant_s);
+    return true;
+}
 static void handler_who_is_debug(
     uint8_t *service_request,
     uint16_t service_len,
@@ -1205,6 +1237,9 @@ static void sen54_task(void *pvParameters)
     /* Initialize BI1..BI4 (BI0..BI3 logical mapping) from current SEN54 status. */
     sen54_poll_and_publish_status();
     last_status_poll = xTaskGetTickCount();
+
+    /* Read temperature-compensation parameters once at startup (read-only) */
+    (void)sen54_publish_temperature_compensation();
 
     /* Wait for the sensor fan and particle chamber to stabilize */
     vTaskDelay(pdMS_TO_TICKS(5000));

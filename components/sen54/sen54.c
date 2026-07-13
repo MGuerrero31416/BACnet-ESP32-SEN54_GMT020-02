@@ -5,6 +5,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include <string.h>
+#include "sen54_i2c_bridge.h"
 
 static const char *TAG = "SEN54";
 static bool i2c_ready = false;
@@ -49,6 +50,13 @@ static sen54_data_t current_data = {
     .humidity = -1.0f, .temperature = -1.0f, .voc_index = -1.0f, .nox_index = -1.0f
 };
 static SemaphoreHandle_t sen54_mutex = NULL;
+static SemaphoreHandle_t sen54_i2c_mutex = NULL;
+
+/* Bridge functions - declared in sen54_i2c_bridge.h and implemented here */
+esp_err_t sen54_i2c_bridge_write(uint8_t address, const uint8_t *data, size_t length);
+esp_err_t sen54_i2c_bridge_read(uint8_t address, uint8_t *data, size_t length);
+esp_err_t sen54_i2c_transaction_begin(void);
+void sen54_i2c_transaction_end(void);
 
 static esp_err_t sen54_write_cmd(uint16_t cmd);
 static esp_err_t sen54_read_bytes(uint8_t *buf, size_t len);
@@ -109,6 +117,12 @@ static esp_err_t sen54_write_cmd(uint16_t cmd)
     if (!sen54_i2c_dev) {
         return ESP_ERR_INVALID_STATE;
     }
+    /* Protect low-level transfer with recursive I2C mutex */
+    if (sen54_i2c_mutex && xSemaphoreTakeRecursive(sen54_i2c_mutex, portMAX_DELAY) == pdTRUE) {
+        esp_err_t r = i2c_master_transmit(sen54_i2c_dev, buf, sizeof(buf), 100);
+        xSemaphoreGiveRecursive(sen54_i2c_mutex);
+        return r;
+    }
     return i2c_master_transmit(sen54_i2c_dev, buf, sizeof(buf), 100);
 }
 
@@ -116,6 +130,11 @@ static esp_err_t sen54_read_bytes(uint8_t *buf, size_t len)
 {
     if (!sen54_i2c_dev) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (sen54_i2c_mutex && xSemaphoreTakeRecursive(sen54_i2c_mutex, portMAX_DELAY) == pdTRUE) {
+        esp_err_t r = i2c_master_receive(sen54_i2c_dev, buf, len, 100);
+        xSemaphoreGiveRecursive(sen54_i2c_mutex);
+        return r;
     }
     return i2c_master_receive(sen54_i2c_dev, buf, len, 100);
 }
@@ -141,6 +160,11 @@ static esp_err_t sen54_write_cmd_u32(uint16_t cmd, uint32_t value)
     buf[6] = (uint8_t)(lsw & 0xFF);
     buf[7] = sen54_crc8(&buf[5], 2);
 
+    if (sen54_i2c_mutex && xSemaphoreTakeRecursive(sen54_i2c_mutex, portMAX_DELAY) == pdTRUE) {
+        esp_err_t r = i2c_master_transmit(sen54_i2c_dev, buf, sizeof(buf), 100);
+        xSemaphoreGiveRecursive(sen54_i2c_mutex);
+        return r;
+    }
     return i2c_master_transmit(sen54_i2c_dev, buf, sizeof(buf), 100);
 }
 
@@ -504,4 +528,61 @@ void sen54_get_data(sen54_data_t *data)
     } else {
         memcpy(data, &current_data, sizeof(sen54_data_t));
     }
+}
+
+/* ---------------------------------------------------------------------------
+ * Bridge and transaction API
+ * --------------------------------------------------------------------------- */
+
+esp_err_t sen54_i2c_transaction_begin(void)
+{
+    if (!sen54_i2c_mutex) {
+        sen54_i2c_mutex = xSemaphoreCreateRecursiveMutex();
+        if (!sen54_i2c_mutex) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (xSemaphoreTakeRecursive(sen54_i2c_mutex, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+void sen54_i2c_transaction_end(void)
+{
+    if (sen54_i2c_mutex) {
+        xSemaphoreGiveRecursive(sen54_i2c_mutex);
+    }
+}
+
+esp_err_t sen54_i2c_bridge_write(uint8_t address, const uint8_t *data, size_t length)
+{
+    if (address != SEN54_I2C_ADDR) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!data || length == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!sen54_i2c_dev) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return i2c_master_transmit(sen54_i2c_dev, data, length, 100);
+}
+
+esp_err_t sen54_i2c_bridge_read(uint8_t address, uint8_t *data, size_t length)
+{
+    if (address != SEN54_I2C_ADDR) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!data || length == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!sen54_i2c_dev) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return i2c_master_receive(sen54_i2c_dev, data, length, 100);
 }
