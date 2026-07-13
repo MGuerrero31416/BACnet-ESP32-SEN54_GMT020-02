@@ -7,6 +7,8 @@
 
 /* bacnet-stack headers */
 #include "bacnet/basic/object/av.h"
+#include "esp_err.h"
+#include <stdbool.h>
 
 static const char *TAG = "bacnet_av";
 #define NVS_NAMESPACE "bacnet"
@@ -93,19 +95,82 @@ void bacnet_nvs_save_av_pv(uint32_t instance, float value) {
     esp_err_t err;
     snprintf(key, sizeof(key), "analog_%lu_val", (unsigned long)instance);
     if ((err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle)) == ESP_OK) {
+        /* Read existing value and only write if different to avoid unnecessary NVS commits */
+        float existing = 0.0f;
+        size_t required = sizeof(existing);
+        esp_err_t r = nvs_get_blob(nvs_handle, key, &existing, &required);
+        if (r == ESP_OK && required == sizeof(existing)) {
+            if (memcmp(&existing, &value, sizeof(value)) == 0) {
+                ESP_LOGI(TAG, "AV%lu NVS value unchanged; existing=%.5f requested=%.5f; NVS write skipped",
+                         (unsigned long)instance, existing, value);
+                nvs_close(nvs_handle);
+                return;
+            }
+        }
+
         if ((err = nvs_set_blob(nvs_handle, key, &value, sizeof(value))) == ESP_OK) {
-            if ((err = nvs_commit(nvs_handle)) == ESP_OK) {
-                ESP_LOGI(TAG, "Saved AV%lu value: %.2f", (unsigned long)instance, value);
+            esp_err_t commit_rc = nvs_commit(nvs_handle);
+            if (commit_rc == ESP_OK) {
+                /* Verify by reading back immediately */
+                float verify = 0.0f;
+                size_t vlen = sizeof(verify);
+                esp_err_t vr = nvs_get_blob(nvs_handle, key, &verify, &vlen);
+                if (vr == ESP_OK && vlen == sizeof(verify)) {
+                    ESP_LOGI(TAG, "Saved AV%lu value: %.2f (set=%d commit=%d verify=%.2f)",
+                             (unsigned long)instance, value, (int)err, (int)commit_rc, verify);
+                } else {
+                    ESP_LOGE(TAG, "Saved AV%lu but verify failed (set=%d commit=%d verify_rc=%d)",
+                             (unsigned long)instance, (int)err, (int)commit_rc, (int)vr);
+                }
             } else {
-                ESP_LOGE(TAG, "NVS commit failed for AV%lu: %d", (unsigned long)instance, err);
+                ESP_LOGE(TAG, "NVS commit failed for AV%lu: %d", (unsigned long)instance, (int)commit_rc);
             }
         } else {
-            ESP_LOGE(TAG, "NVS set_blob failed for AV%lu: %d", (unsigned long)instance, err);
+            ESP_LOGE(TAG, "NVS set_blob failed for AV%lu: %d", (unsigned long)instance, (int)err);
         }
         nvs_close(nvs_handle);
     } else {
-        ESP_LOGE(TAG, "NVS open failed for AV%lu: %d", (unsigned long)instance, err);
+        ESP_LOGE(TAG, "NVS open failed for AV%lu: %d", (unsigned long)instance, (int)err);
     }
+}
+
+esp_err_t bacnet_nvs_load_av_pv(uint32_t instance, float *value, bool *found)
+{
+    nvs_handle_t nvs_handle;
+    char key[32];
+    esp_err_t err;
+    if (value) {
+        *value = 0.0f;
+    }
+    if (found) {
+        *found = false;
+    }
+
+    snprintf(key, sizeof(key), "analog_%lu_val", (unsigned long)instance);
+    err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    size_t len = sizeof(float);
+    esp_err_t r = nvs_get_blob(nvs_handle, key, value, &len);
+    if (r == ESP_OK && len == sizeof(float)) {
+        if (found) {
+            *found = true;
+        }
+        nvs_close(nvs_handle);
+        return ESP_OK;
+    }
+
+    nvs_close(nvs_handle);
+    if (r == ESP_ERR_NVS_NOT_FOUND) {
+        if (found) {
+            *found = false;
+        }
+        return ESP_OK;
+    }
+
+    return r;
 }
 
 void bacnet_nvs_load_av(uint32_t instance) {

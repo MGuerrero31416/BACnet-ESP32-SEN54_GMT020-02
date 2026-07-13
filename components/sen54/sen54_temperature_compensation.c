@@ -3,6 +3,7 @@
 #include "sensirion/sen5x_i2c.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include <math.h>
 
 static const char *TAG = "sen54_tc";
 
@@ -42,6 +43,40 @@ esp_err_t sen54_temperature_compensation_get(
              parameters->offset_c,
              parameters->slope,
              (unsigned)parameters->time_constant_s);
+
+    return ESP_OK;
+}
+
+esp_err_t sen54_temperature_compensation_set(
+    const sen54_temperature_compensation_t *parameters)
+{
+    if (!parameters) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int16_t raw_offset = (int16_t)lroundf(parameters->offset_c * 200.0f);
+    int16_t raw_slope = (int16_t)lroundf(parameters->slope * 10000.0f);
+    uint16_t raw_time_constant = parameters->time_constant_s;
+
+    esp_err_t err = sen54_i2c_transaction_begin();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "transaction begin failed (%s)", esp_err_to_name(err));
+        return err;
+    }
+
+    int16_t res = sen5x_set_temperature_offset_parameters(
+        raw_offset, raw_slope, raw_time_constant);
+
+    /* Always release the transaction mutex */
+    sen54_i2c_transaction_end();
+
+    if (res != 0) {
+        ESP_LOGW(TAG, "sen5x_set_temperature_offset_parameters failed: %d", res);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "SEN54 temp compensation write: raw_offset=%d raw_slope=%d tc=%u",
+             raw_offset, raw_slope, (unsigned)raw_time_constant);
 
     return ESP_OK;
 }
