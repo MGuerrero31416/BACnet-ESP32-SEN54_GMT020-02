@@ -52,6 +52,26 @@ __attribute__((weak)) bool bacnet_av7_auto_cleaning_interval_write(
     return false;
 }
 
+__attribute__((weak)) bool bacnet_sen54_temperature_compensation_write(
+    uint32_t object_instance,
+    float requested_value,
+    float *applied_value,
+    BACNET_ERROR_CLASS *error_class,
+    BACNET_ERROR_CODE *error_code)
+{
+    (void)object_instance;
+    (void)requested_value;
+    (void)applied_value;
+    if (error_class) {
+        *error_class = ERROR_CLASS_PROPERTY;
+    }
+    if (error_code) {
+        *error_code = ERROR_CODE_WRITE_ACCESS_DENIED;
+    }
+
+    return false;
+}
+
 /* Key List for storing the object data sorted by instance number  */
 static OS_Keylist Object_List;
 /* common object type */
@@ -1032,6 +1052,22 @@ bool Analog_Value_Write_Property(BACNET_WRITE_PROPERTY_DATA *wp_data)
                         BACNET_ERROR_CODE hook_error_code = ERROR_CODE_OPERATIONAL_PROBLEM;
                         float applied_value = write_value;
                         if (!bacnet_av7_auto_cleaning_interval_write(
+                                write_value,
+                                &applied_value,
+                                &hook_error_class,
+                                &hook_error_code)) {
+                            status = false;
+                            wp_data->error_class = hook_error_class;
+                            wp_data->error_code = hook_error_code;
+                            break;
+                        }
+                        write_value = applied_value;
+                    } else if (wp_data->object_instance == 8U || wp_data->object_instance == 9U || wp_data->object_instance == 10U) {
+                        BACNET_ERROR_CLASS hook_error_class = ERROR_CLASS_DEVICE;
+                        BACNET_ERROR_CODE hook_error_code = ERROR_CODE_OPERATIONAL_PROBLEM;
+                        float applied_value = write_value;
+                        if (!bacnet_sen54_temperature_compensation_write(
+                                wp_data->object_instance,
                                 write_value,
                                 &applied_value,
                                 &hook_error_class,

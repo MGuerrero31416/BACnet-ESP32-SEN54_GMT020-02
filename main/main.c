@@ -81,6 +81,7 @@ static void bacnet_receive_task(void *pvParameters);
 static void bacnet_mstp_receive_task(void *pvParameters);
 static void bacnet_cov_task(void *pvParameters);
 static void sen54_task(void *pvParameters);
+static void sen54_reapply_temperature_offset(void);
 
 /* AV instance numbers for SEN54 temperature compensation */
 #define SEN54_TEMP_OFFSET_AV_INSTANCE 8U
@@ -1241,6 +1242,9 @@ static void sen54_task(void *pvParameters)
     /* Read temperature-compensation parameters once at startup (read-only) */
     (void)sen54_publish_temperature_compensation();
 
+    /* Reapply stored temperature offset from NVS (if any) after sensor init */
+    sen54_reapply_temperature_offset();
+
     /* Wait for the sensor fan and particle chamber to stabilize */
     vTaskDelay(pdMS_TO_TICKS(5000));
 
@@ -1264,6 +1268,8 @@ static void sen54_task(void *pvParameters)
 
             if (sen54_poll_and_publish_status()) {
                 last_status_poll = xTaskGetTickCount();
+                /* After a full reset and successful status refresh, reapply stored offset */
+                sen54_reapply_temperature_offset();
             }
             continue;
         }
@@ -1334,6 +1340,8 @@ static void sen54_task(void *pvParameters)
                     sen54_init();
                     if (sen54_poll_and_publish_status()) {
                         last_status_poll = xTaskGetTickCount();
+                        /* Reapply stored offset after recovery init */
+                        sen54_reapply_temperature_offset();
                     }
                     consecutive_failures = 0;
                     vTaskDelay(pdMS_TO_TICKS(1500));
@@ -1408,4 +1416,211 @@ static void bacnet_track_confirmed_request_bip(
                 (unsigned)Device_Max_APDU_Accepted());
         }
     }
+}
+
+bool bacnet_sen54_temperature_compensation_write(
+    uint32_t object_instance,
+    float requested_value,
+    float *applied_value,
+    BACNET_ERROR_CLASS *error_class,
+    BACNET_ERROR_CODE *error_code)
+{
+    sen54_temperature_compensation_t params;
+    sen54_temperature_compensation_t new_params;
+    esp_err_t rc;
+
+    if (error_class) {
+        *error_class = ERROR_CLASS_PROPERTY;
+    }
+    if (error_code) {
+        *error_code = ERROR_CODE_VALUE_OUT_OF_RANGE;
+    }
+
+    /* Validate and read current parameters */
+    rc = sen54_temperature_compensation_get(&params);
+    if (rc != ESP_OK) {
+        if (error_class) {
+            *error_class = ERROR_CLASS_DEVICE;
+        }
+        if (error_code) {
+            *error_code = ERROR_CODE_OPERATIONAL_PROBLEM;
+        }
+        return false;
+    }
+
+    new_params = params; /* start from current values */
+
+    if (object_instance == SEN54_TEMP_OFFSET_AV_INSTANCE) {
+        if (!isfinite(requested_value)) {
+            return false;
+        }
+        long raw = lroundf(requested_value * 200.0f);
+        if (raw < INT16_MIN || raw > INT16_MAX) {
+            return false;
+        }
+        new_params.offset_c = (float)raw / 200.0f;
+    } else if (object_instance == SEN54_TEMP_SLOPE_AV_INSTANCE) {
+        if (!isfinite(requested_value)) {
+            return false;
+        }
+        long raw = lroundf(requested_value * 10000.0f);
+        if (raw < INT16_MIN || raw > INT16_MAX) {
+            return false;
+        }
+        new_params.slope = (float)raw / 10000.0f;
+    } else if (object_instance == SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE) {
+        if (!isfinite(requested_value) || requested_value < 0.0f ||
+            requested_value > 65535.0f) {
+            return false;
+        }
+        uint32_t requested = (uint32_t)requested_value;
+        if ((float)requested != requested_value) {
+            return false;
+        }
+        new_params.time_constant_s = (uint16_t)requested;
+    } else {
+        return false;
+    }
+
+    /* Write full parameter set to sensor */
+    if (sen54_temperature_compensation_set(&new_params) != ESP_OK) {
+        if (error_class) {
+            *error_class = ERROR_CLASS_DEVICE;
+        }
+        if (error_code) {
+            *error_code = ERROR_CODE_OPERATIONAL_PROBLEM;
+        }
+        return false;
+    }
+
+    /* Read back verified values */
+    rc = sen54_temperature_compensation_get(&params);
+    if (rc != ESP_OK) {
+        if (error_class) {
+            *error_class = ERROR_CLASS_DEVICE;
+        }
+        if (error_code) {
+            *error_code = ERROR_CODE_OPERATIONAL_PROBLEM;
+        }
+        return false;
+    }
+
+    /* Update BACnet AVs with verified values */
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_OFFSET_AV_INSTANCE, params.offset_c, 16);
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_SLOPE_AV_INSTANCE, params.slope, 16);
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, (float)params.time_constant_s, 16);
+
+    /* Return applied value for the requested AV */
+    if (applied_value) {
+        if (object_instance == SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE) {
+            *applied_value = (float)params.time_constant_s;
+        } else if (object_instance == SEN54_TEMP_OFFSET_AV_INSTANCE) {
+            *applied_value = params.offset_c;
+        } else {
+            *applied_value = params.slope;
+        }
+    }
+
+    return true;
+}
+
+static void sen54_reapply_temperature_offset(void)
+{
+    /* Do nothing if NVS override mode requests compiled defaults */
+    if (override_nvs_on_flash) {
+        ESP_LOGI(TAG, "[SEN54] NVS override active; not restoring temperature compensation from NVS");
+        return;
+    }
+
+    /* Load AV8/AV9/AV10 persisted PVs from NVS (float blob). If a key
+     * does not exist, fall back to the compiled default for that AV.
+     */
+    float offset_c = 0.0f;
+    float slope = 0.0f;
+    float tc_f = 0.0f;
+    bool found_offset = false, found_slope = false, found_tc = false;
+    esp_err_t rc;
+
+    rc = bacnet_nvs_load_av_pv(SEN54_TEMP_OFFSET_AV_INSTANCE, &offset_c, &found_offset);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "[SEN54] NVS read error for AV%u offset: %s", (unsigned)SEN54_TEMP_OFFSET_AV_INSTANCE, esp_err_to_name(rc));
+    }
+    rc = bacnet_nvs_load_av_pv(SEN54_TEMP_SLOPE_AV_INSTANCE, &slope, &found_slope);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "[SEN54] NVS read error for AV%u slope: %s", (unsigned)SEN54_TEMP_SLOPE_AV_INSTANCE, esp_err_to_name(rc));
+    }
+    rc = bacnet_nvs_load_av_pv(SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, &tc_f, &found_tc);
+    if (rc != ESP_OK) {
+        ESP_LOGW(TAG, "[SEN54] NVS read error for AV%u time-constant: %s", (unsigned)SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, esp_err_to_name(rc));
+    }
+
+    /* If not found, use compiled default from USER_AV_INITIAL_VALUES (map instance->index) */
+    if (!found_offset) {
+        unsigned idx = Analog_Value_Instance_To_Index(SEN54_TEMP_OFFSET_AV_INSTANCE);
+        if (idx < USER_AV_COUNT) {
+            offset_c = USER_AV_INITIAL_VALUES[idx];
+            ESP_LOGI(TAG, "[SEN54] AV%u not in NVS; using compiled default %.3f",
+                     (unsigned)SEN54_TEMP_OFFSET_AV_INSTANCE, offset_c);
+        }
+    } else {
+        ESP_LOGI(TAG, "[SEN54] Compensation NVS load: AV8 offset=%.3f found=yes", offset_c);
+    }
+    if (!found_slope) {
+        unsigned idx = Analog_Value_Instance_To_Index(SEN54_TEMP_SLOPE_AV_INSTANCE);
+        if (idx < USER_AV_COUNT) {
+            slope = USER_AV_INITIAL_VALUES[idx];
+            ESP_LOGI(TAG, "[SEN54] AV%u not in NVS; using compiled default %.5f",
+                     (unsigned)SEN54_TEMP_SLOPE_AV_INSTANCE, slope);
+        }
+    } else {
+        ESP_LOGI(TAG, "[SEN54] Compensation NVS load: AV9 slope=%.5f found=yes", slope);
+    }
+    if (!found_tc) {
+        unsigned idx = Analog_Value_Instance_To_Index(SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE);
+        if (idx < USER_AV_COUNT) {
+            tc_f = USER_AV_INITIAL_VALUES[idx];
+            ESP_LOGI(TAG, "[SEN54] AV%u not in NVS; using compiled default %.0f",
+                     (unsigned)SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, tc_f);
+        }
+    } else {
+        ESP_LOGI(TAG, "[SEN54] Compensation NVS load: AV10 time_constant=%.0f found=yes", tc_f);
+    }
+
+    /* Validate and convert tc to uint16 */
+    if (!isfinite(offset_c) || !isfinite(slope) || !isfinite(tc_f)) {
+        ESP_LOGW(TAG, "[SEN54] Loaded compensation values not finite; skipping reapply");
+        return;
+    }
+
+    uint16_t time_constant = 0;
+    if (tc_f < 0.0f) {
+        time_constant = 0;
+    } else if (tc_f > 65535.0f) {
+        time_constant = 65535;
+    } else {
+        time_constant = (uint16_t)tc_f;
+    }
+
+    /* Prepare parameters and apply them in one operation */
+    sen54_temperature_compensation_t newp = { .offset_c = offset_c, .slope = slope, .time_constant_s = time_constant };
+
+    if (sen54_temperature_compensation_set(&newp) != ESP_OK) {
+        ESP_LOGE(TAG, "[SEN54] Failed to apply temperature compensation from NVS: offset=%.3f slope=%.5f tc=%u",
+                 offset_c, slope, (unsigned)time_constant);
+        return;
+    }
+
+    /* Read back and update AVs */
+    sen54_temperature_compensation_t params;
+    if (sen54_temperature_compensation_get(&params) != ESP_OK) {
+        ESP_LOGE(TAG, "[SEN54] Readback failed after applying temperature compensation");
+        return;
+    }
+
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_OFFSET_AV_INSTANCE, params.offset_c, 16);
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_SLOPE_AV_INSTANCE, params.slope, 16);
+    (void)Analog_Value_Present_Value_Set(SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, (float)params.time_constant_s, 16);
+
+    ESP_LOGI(TAG, "[SEN54] Restored temperature compensation from NVS: offset=%.3f C slope=%.5f time_constant=%u s",
+             params.offset_c, params.slope, (unsigned)params.time_constant_s);
 }

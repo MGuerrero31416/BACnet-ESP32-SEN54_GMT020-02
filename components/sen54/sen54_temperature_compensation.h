@@ -16,6 +16,9 @@ typedef struct {
 esp_err_t sen54_temperature_compensation_get(
     sen54_temperature_compensation_t *parameters);
 
+esp_err_t sen54_temperature_compensation_set(
+    const sen54_temperature_compensation_t *parameters);
+
 #ifdef __cplusplus
 }
 #endif
