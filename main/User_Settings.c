@@ -32,7 +32,7 @@ const char USER_WIFI_STATIC_IP_NETMASK[] = "255.255.255.0";
 /* BACnet device settings */
 const char USER_BACNET_DEVICE_NAME[] = "ESP32_55525";
 const uint32_t USER_BACNET_DEVICE_INSTANCE = 55525; 
-const int USER_OVERRIDE_NVS_ON_FLASH = 0; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
+const int USER_OVERRIDE_NVS_ON_FLASH = 1; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
 
 /* BACnet device identity settings */
 const char USER_DEVICE_DESCRIPTION[] = "ESP32 BACnet Environmental Sensor";
@@ -101,12 +101,12 @@ const char *USER_AV_NAMES[USER_AV_COUNT] = {
     "SEN54 Temperature Offset",
     "SEN54 Temperature Offset Slope",
     "SEN54 Temperature Compensation Time Constant",
-    "Reserved AV11",
-    "Reserved AV12",
-    "Reserved AV13",
-    "Reserved AV14",
-    "Reserved AV15",
-    "Reserved AV16"
+    "Reserved AV 11",
+    "Reserved AV 12",
+    "Reserved AV 13",
+    "Reserved AV 14",
+    "Reserved AV 15",
+    "Reserved AV 16"
 };
 const char *USER_AV_DESCRIPTIONS[USER_AV_COUNT] = {
     "Temperature",
@@ -115,16 +115,16 @@ const char *USER_AV_DESCRIPTIONS[USER_AV_COUNT] = {
     "VOC Index",
     "PM1.0",
     "PM4.0",
-    "SEN54 Automatic fan cleaning interval (seconds)",
-    "SEN54 temperature compensation offset",
-    "SEN54 normalized temperature compensation slope",
-    "SEN54 temperature compensation time constant in seconds",
-    "Reserved analog value 11",
-    "Reserved analog value 12",
-    "Reserved analog value 13",
-    "Reserved analog value 14",
-    "Reserved analog value 15",
-    "Reserved analog value 16"
+    "Automatic fan cleaning interval (seconds)",
+    "Temperature compensation offset",
+    "Normalized temperature compensation slope",
+    "Temperature compensation time constant in seconds",
+    "Reserved Analog Value 11",
+    "Reserved Analog Value 12",
+    "Reserved Analog Value 13",
+    "Reserved Analog Value 14",
+    "Reserved Analog Value 15",
+    "Reserved Analog Value 16"
 };
 const uint16_t USER_AV_UNITS[USER_AV_COUNT] = {
     UNITS_DEGREES_CELSIUS,
@@ -216,10 +216,10 @@ const uint8_t USER_BV_INITIAL_VALUES[USER_BV_COUNT] = {
 
 const uint32_t USER_AI_INSTANCES[USER_AI_COUNT] = { 1 };
 const char *USER_AI_NAMES[USER_AI_COUNT] = {
-    "AI1"
+    "Reserved AI 1"
 };
 const char *USER_AI_DESCRIPTIONS[USER_AI_COUNT] = {
-    "Analog Input 1"
+    "Reserved Analog Input 1"
 };
 const uint16_t USER_AI_UNITS[USER_AI_COUNT] = {
     UNITS_DEGREES_CELSIUS
@@ -265,10 +265,10 @@ const uint8_t USER_BI_INITIAL_VALUES[USER_BI_COUNT] = {
 
 const uint32_t USER_BO_INSTANCES[USER_BO_COUNT] = { 1 };
 const char *USER_BO_NAMES[USER_BO_COUNT] = {
-    "BO1"
+    "Reserved BO1"
 };
 const char *USER_BO_DESCRIPTIONS[USER_BO_COUNT] = {
-    "Binary Output 1"
+    "Reserved BO1"
 };
 const char *USER_BO_ACTIVE_TEXT[USER_BO_COUNT] = {
     "ON"
