@@ -32,7 +32,7 @@ const char USER_WIFI_STATIC_IP_NETMASK[] = "255.255.255.0";
 /* BACnet device settings */
 const char USER_BACNET_DEVICE_NAME[] = "ESP32_55525";
 const uint32_t USER_BACNET_DEVICE_INSTANCE = 55525; 
-const int USER_OVERRIDE_NVS_ON_FLASH = 1; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
+const int USER_OVERRIDE_NVS_ON_FLASH = 0; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
 
 /* BACnet device identity settings */
 const char USER_DEVICE_DESCRIPTION[] = "ESP32 BACnet Environmental Sensor";
