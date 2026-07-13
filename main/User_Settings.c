@@ -41,7 +41,7 @@ const char USER_VENDOR_NAME[] = "ESCAP FMS";
 const uint16_t USER_VENDOR_IDENTIFIER = 260;
 const char USER_DEVICE_LOCATION[] = "Bangkok";
 const char USER_FIRMWARE_REVISION[] = "GMT020_2.0.0";
-const char USER_APPLICATION_SOFTWARE_VERSION[] = "2.0";
+const char USER_APPLICATION_SOFTWARE_VERSION[] = "BACnet-ESP32-SEN54_GMT020-02";
 const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55525_asdfg"; //CHANGE ME UNIQUE PER DEVICE
 
 void User_Settings_InitDeviceIdentity(void)
