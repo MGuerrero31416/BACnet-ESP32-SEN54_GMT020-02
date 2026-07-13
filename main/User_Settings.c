@@ -268,7 +268,7 @@ const char *USER_BO_NAMES[USER_BO_COUNT] = {
     "Reserved BO1"
 };
 const char *USER_BO_DESCRIPTIONS[USER_BO_COUNT] = {
-    "Reserved BO1"
+    "Reserved Binary Output 1"
 };
 const char *USER_BO_ACTIVE_TEXT[USER_BO_COUNT] = {
     "ON"
