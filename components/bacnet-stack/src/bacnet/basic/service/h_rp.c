@@ -38,7 +38,7 @@
 #endif
 
 #ifndef RP_TX_PATH_DEBUG
-#define RP_TX_PATH_DEBUG 1
+#define RP_TX_PATH_DEBUG 0
 #endif
 
 #ifndef USER_BACNET_ROUTED_COMPAT_MODE
@@ -406,7 +406,8 @@ void handler_read_property(
     bytes_sent = datalink_send_pdu(
         src, &npdu_data, &Handler_Transmit_Buffer[0], pdu_len);
 
-    /* Compact proof log for Object_List requests */
+    /* Compact proof log for Object_List requests (emit only when explicitly enabled) */
+#if OBJECT_LIST_DEBUG
     if (object_list_debug_target(&rpdata)) {
         ESP_LOGI(
             "obj_list",
@@ -419,6 +420,7 @@ void handler_read_property(
             object_list_debug_result_name(len),
             bytes_sent);
     }
+#endif
 
 #if RP_TX_PATH_DEBUG
     if (object_list_debug_target(&rpdata)) {

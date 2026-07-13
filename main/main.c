@@ -1604,6 +1604,72 @@ static void sen54_reapply_temperature_offset(void)
     /* Prepare parameters and apply them in one operation */
     sen54_temperature_compensation_t newp = { .offset_c = offset_c, .slope = slope, .time_constant_s = time_constant };
 
+    /* First-run NVS initialization: if any of the AV8/AV9/AV10 keys were not
+     * found in NVS, write the compiled default value into NVS so subsequent
+     * boots read the stored value. Commit once after all writes succeed.
+     */
+    if (!found_offset || !found_slope || !found_tc) {
+        nvs_handle_t nvs_handle;
+        esp_err_t err = nvs_open("bacnet", NVS_READWRITE, &nvs_handle);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "[SEN54] NVS open failed for initialization: %s", esp_err_to_name(err));
+        } else {
+            bool wrote_any = false;
+            esp_err_t set_err;
+            char key[32];
+
+            if (!found_offset) {
+                snprintf(key, sizeof(key), "analog_%lu_val", (unsigned long)SEN54_TEMP_OFFSET_AV_INSTANCE);
+                set_err = nvs_set_blob(nvs_handle, key, &offset_c, sizeof(offset_c));
+                if (set_err == ESP_OK) {
+                    wrote_any = true;
+                    ESP_LOGI(TAG, "[SEN54] No saved AV%u offset; initialized NVS with default %.3f",
+                             (unsigned)SEN54_TEMP_OFFSET_AV_INSTANCE, offset_c);
+                } else {
+                    ESP_LOGW(TAG, "[SEN54] Failed to initialize AV%u offset in NVS: %s",
+                             (unsigned)SEN54_TEMP_OFFSET_AV_INSTANCE, esp_err_to_name(set_err));
+                }
+            }
+
+            if (!found_slope) {
+                snprintf(key, sizeof(key), "analog_%lu_val", (unsigned long)SEN54_TEMP_SLOPE_AV_INSTANCE);
+                set_err = nvs_set_blob(nvs_handle, key, &slope, sizeof(slope));
+                if (set_err == ESP_OK) {
+                    wrote_any = true;
+                    ESP_LOGI(TAG, "[SEN54] No saved AV%u slope; initialized NVS with default %.5f",
+                             (unsigned)SEN54_TEMP_SLOPE_AV_INSTANCE, slope);
+                } else {
+                    ESP_LOGW(TAG, "[SEN54] Failed to initialize AV%u slope in NVS: %s",
+                             (unsigned)SEN54_TEMP_SLOPE_AV_INSTANCE, esp_err_to_name(set_err));
+                }
+            }
+
+            if (!found_tc) {
+                snprintf(key, sizeof(key), "analog_%lu_val", (unsigned long)SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE);
+                set_err = nvs_set_blob(nvs_handle, key, &tc_f, sizeof(tc_f));
+                if (set_err == ESP_OK) {
+                    wrote_any = true;
+                    ESP_LOGI(TAG, "[SEN54] No saved AV%u time constant; initialized NVS with default %.0f",
+                             (unsigned)SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, tc_f);
+                } else {
+                    ESP_LOGW(TAG, "[SEN54] Failed to initialize AV%u time constant in NVS: %s",
+                             (unsigned)SEN54_TEMP_TIME_CONSTANT_AV_INSTANCE, esp_err_to_name(set_err));
+                }
+            }
+
+            if (wrote_any) {
+                esp_err_t commit_rc = nvs_commit(nvs_handle);
+                if (commit_rc == ESP_OK) {
+                    ESP_LOGI(TAG, "[SEN54] Committed initialized temperature-compensation defaults to NVS");
+                } else {
+                    ESP_LOGW(TAG, "[SEN54] Failed to commit initialized defaults to NVS: %s", esp_err_to_name(commit_rc));
+                }
+            }
+
+            nvs_close(nvs_handle);
+        }
+    }
+
     if (sen54_temperature_compensation_set(&newp) != ESP_OK) {
         ESP_LOGE(TAG, "[SEN54] Failed to apply temperature compensation from NVS: offset=%.3f slope=%.5f tc=%u",
                  offset_c, slope, (unsigned)time_constant);
