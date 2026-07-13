@@ -1,0 +1,5 @@
+idf_component_register(
+    SRCS "pms5003.c"
+    INCLUDE_DIRS "."
+    REQUIRES driver arduino_esp32
+)

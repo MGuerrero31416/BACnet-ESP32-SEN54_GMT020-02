@@ -1,0 +1,119 @@
+**Summary**: I added a reversible build-time display selection, preserved the original setup, added the provisional ST7789 setup, changed TFT_eSPI to select the setup from menuconfig, and implemented a build-time disable for the RS-485 PHY to avoid the GPIO5 conflict. I could not run builds here because `idf.py` is not available in this environment; see the Build Result section and commands to run locally.
+
+**Files created**
+- **User setup (preserved original)**: User_Setup_HW657A.h  
+- **User setup (provisional ST7789)**: User_Setup_ST7789_240x320.h  
+- **Kconfig entry**: Kconfig.projbuild
+
+**Files modified**
+- **TFT_eSPI setup selection**: User_Setup_Select.h — now selects the correct User_Setups header based on CONFIG_ symbols (falls back to original User_Setup.h).
+- **Project CMake**: CMakeLists.txt — adds compile definition to set BOARD_RS485_PHY_ENABLED=0 when provisional display is selected.
+- **Display init & minimal UI adaptation**: display.cpp — conditional init/logging and layout constants use tft.width()/tft.height() where practical.
+
+**Configuration symbols added**
+- CONFIG_DISPLAY_HW657A
+- CONFIG_DISPLAY_ST7789_240X320
+
+**How to switch between displays in menuconfig**
+- Run: idf.py menuconfig  
+- Navigate: Application Configuration → Display hardware  
+- Choose either:
+  - Original HW657A display (CONFIG_DISPLAY_HW657A)
+  - Provisional 240x320 ST7789 display (CONFIG_DISPLAY_ST7789_240X320) — this is the temporary default.
+
+**Rotation and logical dimensions used**
+- Rotation: 1 (both profiles)
+- Provisional ST7789 (physical 240×320): logical width = 320, logical height = 240
+- Original HW657A (preserved behaviour): logical width = 320, logical height = 170 (keeps existing layout)
+
+**How the GPIO 5 conflict was handled**
+- The provisional User_Setup_ST7789_240x320 uses TFT_CS = GPIO 5.
+- To avoid simultaneous use of GPIO 5 by MAX485 DE/RE, I implemented a build-time override:
+  - When CONFIG_DISPLAY_ST7789_240X320 is selected, CMakeLists.txt adds the compiler definition BOARD_RS485_PHY_ENABLED=0 for the main component.
+  - mstp_rs485.c already gates actual RS-485 TX and DE handling on BOARD_RS485_PHY_ENABLED; with the macro set to 0 at compile-time the code avoids configuring DE pin, avoids gpio_set_level/de toggles, and MSTP transmit paths early-return.
+- When CONFIG_DISPLAY_HW657A is selected, BOARD_RS485_PHY_ENABLED remains unchanged (default 1) and existing RS-485 behavior is preserved.
+- This approach is reversible at build time and does not modify MS/TP source logic or state machines.
+
+**Display initialization & logging (per requirement)**
+- For provisional ST7789 profile:
+  - Initialization used: tft.init(); tft.setRotation(1); tft.fillScreen(TFT_BLACK);
+  - After rotation, code verifies tft.width() and tft.height() and logs the result.
+  - Single informational startup log includes: selected display profile, physical resolution macros (TFT_WIDTH/TFT_HEIGHT), rotation, logical width/height (tft.width()/tft.height()), and SPI pin assignments (TFT_MOSI, TFT_SCLK, TFT_CS, TFT_DC, TFT_RST).
+- For original HW657A profile:
+  - Existing behavior preserved (backlight GPIO handled if defined, tft.begin(), setRotation(1), fillScreen).
+  - Single informational startup log added with the same set of details (and whether backlight macro is defined).
+
+**Minimal UI adaptation**
+- Kept the same public display API and application data unchanged.
+- Layout constants now derive width/height appropriately; rendering still uses the original label/value positions where practical.
+- The extra vertical space for the 320×240 logical screen is left largely unused (as requested), preserving the existing upper-screen layout and labels.
+
+**Build verification**
+- I attempted to run the build here, but the environment does not have idf.py available:
+  - Attempted Build_CMakeTools failed to configure the project.
+  - Running `idf.py fullclean` locally in the provided terminal reported: idf.py not recognized.
+- To verify locally, please run (in your ESP-IDF environment):
+
+```bash
+# Provisional (default) configuration (should be selected by default)
+idf.py fullclean
+idf.py build
+
+# Switch to original display:
+idf.py menuconfig
+# Application Configuration -> Display hardware -> choose Original HW657A display
+idf.py fullclean
+idf.py build
+```
+
+- Expected compilation behavior:
+  - Both configurations should compile.
+  - When building with CONFIG_DISPLAY_ST7789_240X320, mstp_rs485 will be compiled with BOARD_RS485_PHY_ENABLED=0 preventing RS-485 DE/RE control.
+  - When building with CONFIG_DISPLAY_HW657A, RS-485 behavior is unchanged.
+
+**Provisional display build result (on my side)**
+- Not executed here due to missing idf.py / ESP-IDF environment in this session. Please run the commands above locally and share build logs if you want me to analyze any errors.
+
+**Original display build result (on my side)**
+- Not executed here for the same reason. Locally, after switching in menuconfig and running the fullclean+build, it should compile as before.
+
+**Confirmation of constraints**
+- I did NOT change:
+  - BACnet protocol stack files
+  - BACnet object code
+  - SEN54 files
+  - Wi‑Fi implementation
+  - NVS or User Settings (beyond reading macros and preserving existing behaviour)
+  - MS/TP state machine or frame processing code (mstp_rs485.c is unmodified; only compile-time macro override is supplied)
+- I did NOT rename, delete, move, or overwrite existing files. The original component User_Setup.h is preserved and left untouched; the original setup is copied into the new User_Setups folder for selection.
+
+**Remaining hardware / build limitations**
+- GPIO5 is still reserved by the provisional display for TFT_CS; when using the provisional display the external RS-485 transceiver is disabled at compile-time (no physical DE toggling or TX via the transceiver). This is intentional and reversible by changing menuconfig.
+- No backlight GPIO was added or assumed for the provisional display (per your instruction).
+- I could not run builds inside this environment because `idf.py` is not available; please run the build commands locally in your ESP-IDF shell and share the outputs if you want me to continue troubleshooting build errors.
+
+Would you like me to:
+- Run further small source adjustments (e.g., tweak FOOTER_Y for 240px height), or
+- Help run the build locally by providing a short checklist of common environment steps to ensure idf.py is discoverable?
+
+=========================
+
+
+The display GPIOs are defined in the TFT_eSPI user-setup headers (the active one is chosen by User_Setup_Select.h). Key locations:
+
+- Provisional ST7789 (current provisional header): SPI pins and RST  
+  User_Setup_ST7789_240x320.h
+
+- Original (preserved) setup in the TFT_eSPI component: SPI pins and backlight  
+  User_Setup.h
+
+- Which setup header is included (menuconfig-controlled selection)  
+  User_Setup_Select.h
+
+- MS/TP DE pin (conflicts with TFT CS = GPIO5) — DE pin define in MS/TP code:  
+  mstp_rs485.c
+
+- The build-time override that disables the RS-485 PHY when the provisional display is selected (so GPIO5 won't be used by MS/TP) is added here:  
+  CMakeLists.txt
+
+In short: the active display GPIOs come from the User_Setup header that User_Setup_Select.h includes (see links above). GPIO5 is used by the provisional TFT CS and is defined as the MS/TP DE pin in mstp_rs485.c (hence the conflict).

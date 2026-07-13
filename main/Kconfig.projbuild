@@ -1,0 +1,15 @@
+menu "Application Configuration"
+
+choice
+    prompt "Display hardware"
+    default DISPLAY_ST7789_240X320
+
+config DISPLAY_HW657A
+    bool "Original HW657A display"
+
+config DISPLAY_ST7789_240X320
+    bool "Provisional 240x320 ST7789 display"
+
+endchoice
+
+endmenu

@@ -1,0 +1,5 @@
+version: "1.0.0"
+description: "PMS5003 Air Quality Sensor Component"
+dependencies:
+  arduino_esp32:
+    version: "*"
