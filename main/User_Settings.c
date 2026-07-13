@@ -40,9 +40,9 @@ const char USER_DEVICE_MODEL_NAME[] = "ESP32-WROOM32-BACnet-SEN54-HW657A";
 const char USER_VENDOR_NAME[] = "ESCAP FMS";
 const uint16_t USER_VENDOR_IDENTIFIER = 260;
 const char USER_DEVICE_LOCATION[] = "Bangkok";
-const char USER_FIRMWARE_REVISION[] = "1.4.0";
-const char USER_APPLICATION_SOFTWARE_VERSION[] = "1.4";
-const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55525_abcdefg"; //CHANGE ME UNIQUE PER DEVICE
+const char USER_FIRMWARE_REVISION[] = "GMT020_2.0.0";
+const char USER_APPLICATION_SOFTWARE_VERSION[] = "2.0";
+const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55525_asdfg"; //CHANGE ME UNIQUE PER DEVICE
 
 void User_Settings_InitDeviceIdentity(void)
 {
@@ -98,9 +98,9 @@ const char *USER_AV_NAMES[USER_AV_COUNT] = {
     "PM1.0",
     "PM4",
     "SEN54 Auto Cleaning Interval",
-    "Reserved AV8",
-    "Reserved AV9",
-    "Reserved AV10",
+    "SEN54 Temperature Offset",
+    "SEN54 Temperature Offset Slope",
+    "SEN54 Temperature Compensation Time Constant",
     "Reserved AV11",
     "Reserved AV12",
     "Reserved AV13",
@@ -116,9 +116,9 @@ const char *USER_AV_DESCRIPTIONS[USER_AV_COUNT] = {
     "PM1.0",
     "PM4.0",
     "Automatic fan cleaning interval (seconds)",
-    "Reserved analog value 8",
-    "Reserved analog value 9",
-    "Reserved analog value 10",
+    "SEN54 temperature compensation offset",
+    "SEN54 normalized temperature compensation slope",
+    "SEN54 temperature compensation time constant in seconds",
     "Reserved analog value 11",
     "Reserved analog value 12",
     "Reserved analog value 13",
@@ -134,9 +134,9 @@ const uint16_t USER_AV_UNITS[USER_AV_COUNT] = {
     UNITS_MICROGRAMS_PER_CUBIC_METER,
     UNITS_MICROGRAMS_PER_CUBIC_METER,
     UNITS_SECONDS,
+    UNITS_DEGREES_CELSIUS,
     UNITS_NO_UNITS,
-    UNITS_NO_UNITS,
-    UNITS_NO_UNITS,
+    UNITS_SECONDS,
     UNITS_NO_UNITS,
     UNITS_NO_UNITS,
     UNITS_NO_UNITS,
@@ -145,6 +145,7 @@ const uint16_t USER_AV_UNITS[USER_AV_COUNT] = {
     UNITS_NO_UNITS
 };
 const float USER_AV_INITIAL_VALUES[USER_AV_COUNT] = {
+    0.0f,
     0.0f,
     0.0f,
     0.0f,
