@@ -14,7 +14,7 @@ static const char *user_settings_bool_text(bool value)
 }
 
 /* WiFi settings */
-const bool USER_ENABLE_BACNET_IP = true;
+const bool USER_ENABLE_BACNET_IP = false;
 /* Edit these locally if you want to override the hidden defaults from
  * User_Settings_private.h. Keep real credentials out of GitHub.
  */
@@ -24,14 +24,14 @@ const bool USER_ENABLE_BACNET_IP = true;
 #ifndef USER_WIFI_PASS
 #define USER_WIFI_PASS ""
 #endif
-const bool USER_WIFI_USE_STATIC_IP = false;
+const bool USER_WIFI_USE_STATIC_IP = true;
 const char USER_WIFI_STATIC_IP_ADDR[] = "10.120.245.96";
 const char USER_WIFI_STATIC_IP_GATEWAY[] = "10.210.245.254";
 const char USER_WIFI_STATIC_IP_NETMASK[] = "255.255.255.0";
 
 /* BACnet device settings */
-const char USER_BACNET_DEVICE_NAME[] = "ESP32_55525";
-const uint32_t USER_BACNET_DEVICE_INSTANCE = 55525; 
+const char USER_BACNET_DEVICE_NAME[] = "ESP32_55517";
+const uint32_t USER_BACNET_DEVICE_INSTANCE = 55517; 
 const int USER_OVERRIDE_NVS_ON_FLASH = 0; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
 
 /* BACnet device identity settings */
@@ -41,8 +41,8 @@ const char USER_VENDOR_NAME[] = "ESCAP FMS";
 const uint16_t USER_VENDOR_IDENTIFIER = 260;
 const char USER_DEVICE_LOCATION[] = "Bangkok";
 const char USER_FIRMWARE_REVISION[] = "GMT020-02-7P 2in Display";
-const char USER_APPLICATION_SOFTWARE_VERSION[] = "2026_07_13 17:21";
-const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55525_asdfg"; //CHANGE ME UNIQUE PER DEVICE
+const char USER_APPLICATION_SOFTWARE_VERSION[] = "2026_07_14 13:23";
+const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55517_asdfg"; //CHANGE ME UNIQUE PER DEVICE
 
 void User_Settings_InitDeviceIdentity(void)
 {
@@ -76,7 +76,7 @@ const uint16_t USER_BBMD_TTL_SECONDS = 600;
 
 /* BACnet MS/TP settings */
 const bool USER_ENABLE_BACNET_MSTP = false;
-const uint8_t USER_MSTP_MAC_ADDRESS = 25;
+const uint8_t USER_MSTP_MAC_ADDRESS = 17;
 const uint8_t USER_MSTP_MAX_INFO_FRAMES = 1; //was 80
 const uint8_t USER_MSTP_MAX_MASTER = 50; // Was 127
 const uint32_t USER_MSTP_BAUD_RATE = 38400U;
