@@ -17,13 +17,22 @@
 #define MSTP_UART_RX_PIN GPIO_NUM_16
 #define MSTP_RS485_AUTO_DIRECTION 1
 #define MSTP_RS485_HAS_DE_PIN 0
+#ifdef GPIO_NUM_NC
+#define MSTP_UART_DE_PIN GPIO_NUM_NC
+#else
 #define MSTP_UART_DE_PIN ((gpio_num_t)-1)
+#endif
 #define MSTP_UART_BAUD_DEFAULT 38400U
 #define MSTP_UART_RX_BUF_SIZE 512
 #define MSTP_UART_TX_BUF_SIZE 512
 #define MSTP_UART_TX_TIMEOUT_MS 100
+#if MSTP_RS485_HAS_DE_PIN
 #define MSTP_RS485_DE_PRE_TX_GUARD_MS 1
 #define MSTP_RS485_DE_POST_TX_GUARD_MS 1
+#else
+#define MSTP_RS485_DE_PRE_TX_GUARD_MS 0
+#define MSTP_RS485_DE_POST_TX_GUARD_MS 0
+#endif
 
 #ifndef BACNET_MSTP_TX_HEX_DEBUG
 #define BACNET_MSTP_TX_HEX_DEBUG 0
@@ -411,11 +420,13 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
 {
     MSTP_TX_INFO tx_info = { 0 };
     MSTP_RS485_CONFIRMED_REQUEST_META *request_meta = NULL;
+#if MSTP_DEBUG_ENABLE
     int64_t now_us = 0;
     int64_t request_to_postponed_us = -1;
     int64_t request_to_final_us = -1;
+#endif
     int written = 0;
-    esp_err_t tx_done = ESP_FAIL;
+    esp_err_t tx_done = ESP_OK;
 #if MSTP_RS485_HAS_DE_PIN
     int de_level_after_enable = -1;
     int de_level_before_disable = -1;
@@ -456,6 +467,9 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     }
 
     tx_done = uart_wait_tx_done(MSTP_UART_PORT, tx_wait_ticks);
+#if !MSTP_DEBUG_ENABLE
+    (void)tx_done;
+#endif
 
 #if MSTP_RS485_HAS_DE_PIN
     vTaskDelay(pdMS_TO_TICKS(MSTP_RS485_DE_POST_TX_GUARD_MS));
@@ -467,6 +481,7 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     if (tx_info.valid &&
         tx_info.is_data_frame &&
         (tx_info.frame_type == FRAME_TYPE_BACNET_DATA_NOT_EXPECTING_REPLY)) {
+#if MSTP_DEBUG_ENABLE
 #if MSTP_RS485_HAS_DE_PIN
         ESP_LOGI(
             TAG,
@@ -492,7 +507,8 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
                 (unsigned)payload_len,
                 written,
                 esp_err_to_name(tx_done));
-        #endif
+#endif
+#endif
     }
 
 #if BACNET_MSTP_TX_HEX_DEBUG
@@ -549,6 +565,7 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
         tx_info.has_invoke_id &&
         mstp_is_confirmed_response_pdu(tx_info.pdu_type)) {
         if (request_meta) {
+#if MSTP_DEBUG_ENABLE
             now_us = esp_timer_get_time();
             request_to_final_us = now_us - request_meta->request_rx_us;
             if (request_meta->reply_postponed_sent &&
@@ -573,6 +590,7 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
                 (unsigned)tx_info.pdu_type,
                 written,
                 (int)tx_done);
+#endif
 
             memset(request_meta, 0, sizeof(*request_meta));
         }

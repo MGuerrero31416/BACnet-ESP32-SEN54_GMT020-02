@@ -114,11 +114,13 @@ static void handler_who_is_debug(
     uint8_t *service_request,
     uint16_t service_len,
     BACNET_ADDRESS *src);
+#if BACNET_DISCOVERY_DIAGNOSTICS
 static void bacnet_track_confirmed_request_bip(
     const uint8_t *apdu,
     int apdu_len,
     const BACNET_ADDRESS *src,
     const char *link);
+#endif
 static TaskHandle_t bacnet_cov_task_handle = NULL;
 static SemaphoreHandle_t bacnet_datalink_mutex = NULL;
 static volatile uint32_t mstp_pdu_count = 0;
@@ -567,6 +569,7 @@ static void bacnet_track_confirmed_request_mstp(
         }
     }
 
+#if MSTP_DEBUG_ENABLE
     ESP_LOGI(
         TAG,
         "%s reply postponed sent invoke=%u requester_mac=%u yes=%s req_to_postponed_ms=%ld",
@@ -575,6 +578,7 @@ static void bacnet_track_confirmed_request_mstp(
         (unsigned)requester_mac,
         reply_postponed_sent ? "yes" : "no",
         (long)(reply_postponed_sent ? ((reply_postponed_tx_us - request_rx_us) / 1000) : -1));
+#endif
 
     track.invoke_id = invoke_id;
     track.requester_mac = requester_mac;
@@ -1343,6 +1347,7 @@ static void bacnet_register_with_bbmd(void)
     ESP_LOGI(TAG, "BBMD register result: %d", result);
 }
 
+#if BACNET_DISCOVERY_DIAGNOSTICS
 static void bacnet_track_confirmed_request_bip(
     const uint8_t *apdu,
     int apdu_len,
@@ -1398,6 +1403,7 @@ static void bacnet_track_confirmed_request_bip(
         }
     }
 }
+#endif
 
 bool bacnet_sen54_temperature_compensation_write(
     uint32_t object_instance,
