@@ -15,7 +15,9 @@
 #define MSTP_UART_PORT UART_NUM_2
 #define MSTP_UART_TX_PIN GPIO_NUM_17
 #define MSTP_UART_RX_PIN GPIO_NUM_16
-#define MSTP_UART_DE_PIN GPIO_NUM_5
+#define MSTP_RS485_AUTO_DIRECTION 1
+#define MSTP_RS485_HAS_DE_PIN 0
+#define MSTP_UART_DE_PIN ((gpio_num_t)-1)
 #define MSTP_UART_BAUD_DEFAULT 38400U
 #define MSTP_UART_RX_BUF_SIZE 512
 #define MSTP_UART_TX_BUF_SIZE 512
@@ -30,17 +32,10 @@
 #define BACNET_MSTP_TX_HEX_DEBUG_TARGET_MAC 40
 #define BACNET_MSTP_TX_HEX_DEBUG_TARGET_DEVICE_INSTANCE 55525UL
 
-/* Board/profile gate for external RS-485 transceiver control. */
-#ifndef BOARD_RS485_PHY_ENABLED
-#define BOARD_RS485_PHY_ENABLED 1
-#endif
-
 /* MAX485-style modules use active-high DE. */
 #ifndef MSTP_RS485_DE_ACTIVE_HIGH
 #define MSTP_RS485_DE_ACTIVE_HIGH 1
 #endif
-
-_Static_assert(MSTP_UART_DE_PIN == GPIO_NUM_5, "Expected DE pin GPIO5");
 
 static const char *TAG = "mstp_rs485";
 static bool mstp_uart_initialized = false;
@@ -288,6 +283,8 @@ static void mstp_log_frame_debug(const uint8_t *payload, uint16_t payload_len)
 }
 #endif
 
+/* Manual DE control is compiled only for transceivers that expose DE/RE. */
+#if MSTP_RS485_HAS_DE_PIN
 static void mstp_rs485_set_tx_mode(bool enabled)
 {
     int level = 0;
@@ -299,6 +296,7 @@ static void mstp_rs485_set_tx_mode(bool enabled)
     }
     gpio_set_level(MSTP_UART_DE_PIN, level);
 }
+#endif
 
 static bool mstp_is_confirmed_response_pdu(uint8_t pdu_type)
 {
@@ -341,6 +339,8 @@ static void mstp_log_hex_frame_full(const uint8_t *payload, uint16_t payload_len
 
 void MSTP_RS485_Init(void)
 {
+    esp_err_t err = ESP_OK;
+
     if (mstp_uart_initialized) {
         return;
     }
@@ -354,6 +354,7 @@ void MSTP_RS485_Init(void)
         .source_clk = UART_SCLK_DEFAULT
     };
 
+#if MSTP_RS485_HAS_DE_PIN
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << MSTP_UART_DE_PIN),
         .mode = GPIO_MODE_INPUT_OUTPUT,
@@ -362,11 +363,12 @@ void MSTP_RS485_Init(void)
         .intr_type = GPIO_INTR_DISABLE
     };
 
-    esp_err_t err = gpio_config(&io_conf);
+    err = gpio_config(&io_conf);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure DE pin: %d", err);
     }
     mstp_rs485_set_tx_mode(false);
+#endif
 
     err = uart_param_config(MSTP_UART_PORT, &config);
     if (err != ESP_OK) {
@@ -389,15 +391,20 @@ void MSTP_RS485_Init(void)
     mstp_last_activity_us = esp_timer_get_time();
     mstp_uart_initialized = true;
 
+#if !MSTP_RS485_HAS_DE_PIN
     ESP_LOGI(
         TAG,
-        "MS/TP UART initialized on TX=%d RX=%d DE=%d @%lu baud rs485_phy_enabled=%d de_active_high=%d",
+        "RS485 transceiver: Waveshare isolated auto-direction, UART2 TX=17 RX=16 DE=disabled baud=38400");
+#else
+    ESP_LOGI(
+        TAG,
+        "MS/TP UART initialized on TX=%d RX=%d DE=%d @%lu baud de_active_high=%d",
         (int)MSTP_UART_TX_PIN,
         (int)MSTP_UART_RX_PIN,
         (int)MSTP_UART_DE_PIN,
         (unsigned long)mstp_baud_rate,
-        (int)BOARD_RS485_PHY_ENABLED,
         (int)MSTP_RS485_DE_ACTIVE_HIGH);
+#endif
 }
 
 void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
@@ -409,9 +416,11 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     int64_t request_to_final_us = -1;
     int written = 0;
     esp_err_t tx_done = ESP_FAIL;
+#if MSTP_RS485_HAS_DE_PIN
     int de_level_after_enable = -1;
     int de_level_before_disable = -1;
     int de_level_after_disable = -1;
+#endif
     TickType_t tx_wait_ticks = pdMS_TO_TICKS(MSTP_UART_TX_TIMEOUT_MS);
 
     if (!payload || payload_len == 0) {
@@ -419,11 +428,6 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     }
     if (!mstp_uart_initialized) {
         MSTP_RS485_Init();
-    }
-
-    if (!BOARD_RS485_PHY_ENABLED) {
-        ESP_LOGE(TAG, "BOARD_RS485_PHY_ENABLED=0; RS485 TX path disabled for this profile");
-        return;
     }
 
     mstp_tx_frame_count++;
@@ -436,9 +440,11 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     }
 
     mstp_tx_in_progress = true;
+#if MSTP_RS485_HAS_DE_PIN
     mstp_rs485_set_tx_mode(true);
     de_level_after_enable = gpio_get_level(MSTP_UART_DE_PIN);
     vTaskDelay(pdMS_TO_TICKS(MSTP_RS485_DE_PRE_TX_GUARD_MS));
+#endif
 
     written = uart_write_bytes(MSTP_UART_PORT, payload, payload_len);
     if (written < 0) {
@@ -451,14 +457,17 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
 
     tx_done = uart_wait_tx_done(MSTP_UART_PORT, tx_wait_ticks);
 
+#if MSTP_RS485_HAS_DE_PIN
     vTaskDelay(pdMS_TO_TICKS(MSTP_RS485_DE_POST_TX_GUARD_MS));
     de_level_before_disable = gpio_get_level(MSTP_UART_DE_PIN);
     mstp_rs485_set_tx_mode(false);
     de_level_after_disable = gpio_get_level(MSTP_UART_DE_PIN);
+#endif
 
     if (tx_info.valid &&
         tx_info.is_data_frame &&
         (tx_info.frame_type == FRAME_TYPE_BACNET_DATA_NOT_EXPECTING_REPLY)) {
+#if MSTP_RS485_HAS_DE_PIN
         ESP_LOGI(
             TAG,
             "mstp TX frame=%u dst=%u src=%u data_len=%u total_len=%u uart_write_ret=%d uart_wait_tx_done=%s de_en=%d de_pre_dis=%d de_dis=%d",
@@ -472,6 +481,18 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
             de_level_after_enable,
             de_level_before_disable,
             de_level_after_disable);
+        #else
+            ESP_LOGI(
+                TAG,
+                "mstp TX frame=%u dst=%u src=%u data_len=%u total_len=%u uart_write_ret=%d uart_wait_tx_done=%s",
+                (unsigned)tx_info.frame_type,
+                (unsigned)payload[3],
+                (unsigned)payload[4],
+                (unsigned)tx_info.mstp_data_len,
+                (unsigned)payload_len,
+                written,
+                esp_err_to_name(tx_done));
+        #endif
     }
 
 #if BACNET_MSTP_TX_HEX_DEBUG

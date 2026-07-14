@@ -762,11 +762,7 @@ void app_main(void)
     s_bacnet_ip_active = false;
 
     if (USER_ENABLE_BACNET_MSTP) {
-#if !defined(DIAG_SKIP_SET_MAX_APDU)
         Device_Set_Max_APDU_Accepted(USER_BACNET_MSTP_MAX_APDU);
-#else
-        ESP_LOGI(TAG, "DIAG: skipping Device_Set_Max_APDU_Accepted due to DIAG_SKIP_SET_MAX_APDU");
-#endif
     }
 
     bacnet_datalink_mutex = xSemaphoreCreateMutex();
@@ -920,17 +916,12 @@ void app_main(void)
 #endif
 
     if (USER_ENABLE_BACNET_MSTP) {
-        (void)dlmstp_send_pdu_queue_drop_source(DLMSTP_TX_SOURCE_I_AM);
-    }
-
-    if (USER_ENABLE_BACNET_MSTP) {
         ESP_LOGI(TAG, "BACnet MS/TP ready");
         dlmstp_reset_statistics();
     }
 
     /* Keep the task alive - maintenance + display updates */
     uint32_t display_tick = 0;
-    uint32_t iam_tick = 0;
     uint32_t mstp_rx_tick = 0;
     uint32_t mstp_last_seen_pdu = 0;
     uint8_t mstp_alive_ticks = 0;
@@ -939,16 +930,6 @@ void app_main(void)
             bacnet_datalink_lock(datalink_bip);
             datalink_maintenance_timer(1);
             bacnet_datalink_unlock();
-        }
-
-        if (USER_ENABLE_BACNET_MSTP && ++iam_tick % 60 == 0) {
-            if ((dlmstp_send_pdu_queue_depth() == 0U) &&
-                dlmstp_token_held() &&
-                dlmstp_can_transmit_now()) {
-                bacnet_datalink_lock(datalink_mstp);
-                (void)bacnet_send_i_am_with_reason("periodic", "MSTP", true);
-                bacnet_datalink_unlock();
-            }
         }
 
         if (USER_ENABLE_BACNET_MSTP && ++mstp_rx_tick % 30 == 0) {

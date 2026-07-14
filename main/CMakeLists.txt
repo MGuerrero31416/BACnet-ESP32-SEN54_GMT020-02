@@ -15,10 +15,5 @@ target_link_libraries(${COMPONENT_LIB} INTERFACE
     "-Wl,--undefined=__wrap_esp_log_writev"
 )
 
-# Ensure BACnet MS/TP remains enabled and RS-485 PHY is enabled.
-# Restore BOARD_RS485_PHY_ENABLED=1 so GPIO5 is used for MAX485 DE/RE.
+# Ensure BACnet MS/TP remains enabled.
 target_compile_definitions(${COMPONENT_LIB} PRIVATE BOARD_BACNET_MSTP_ENABLED=1)
-if(CONFIG_DISPLAY_ST7789_240X320)
-    # Ensure RS485 PHY enabled even for provisional display (TFT CS moved to GPIO25)
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE BOARD_RS485_PHY_ENABLED=1)
-endif()

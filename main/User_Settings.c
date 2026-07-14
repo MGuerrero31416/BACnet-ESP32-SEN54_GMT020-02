@@ -75,10 +75,10 @@ const uint16_t USER_BBMD_PORT = 0xBAC0;
 const uint16_t USER_BBMD_TTL_SECONDS = 600;
 
 /* BACnet MS/TP settings */
-const bool USER_ENABLE_BACNET_MSTP = false;
+const bool USER_ENABLE_BACNET_MSTP = true;
 const uint8_t USER_MSTP_MAC_ADDRESS = 17;
-const uint8_t USER_MSTP_MAX_INFO_FRAMES = 1; //was 80
-const uint8_t USER_MSTP_MAX_MASTER = 50; // Was 127
+const uint8_t USER_MSTP_MAX_INFO_FRAMES = 1;
+const uint8_t USER_MSTP_MAX_MASTER = 127;
 const uint32_t USER_MSTP_BAUD_RATE = 38400U;
 const bool USER_MSTP_AUTO_BAUD = false;
 #if USER_BACNET_ROUTED_COMPAT_MODE
@@ -145,7 +145,6 @@ const uint16_t USER_AV_UNITS[USER_AV_COUNT] = {
     UNITS_NO_UNITS
 };
 const float USER_AV_INITIAL_VALUES[USER_AV_COUNT] = {
-    0.0f,
     0.0f,
     0.0f,
     0.0f,
