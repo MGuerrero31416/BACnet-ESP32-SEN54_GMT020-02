@@ -24,6 +24,9 @@
 #include "bacnet/npdu.h"
 #include "bacnet/bacaddr.h"
 #include "bacnet/basic/sys/debug.h"
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#endif
 
 /* the current MSTP port that the datalink is using */
 static struct mstp_port_struct_t *MSTP_Port;
@@ -354,6 +357,15 @@ const char *dlmstp_tx_source_text(DLMSTP_TX_SOURCE source)
     }
 
     return "other";
+}
+
+const char *dlmstp_master_state_text_current(void)
+{
+    if (!MSTP_Port) {
+        return "NO_PORT";
+    }
+
+    return dlmstp_master_state_text_short(MSTP_Port->master_state);
 }
 
 bool dlmstp_send_reply_postponed(uint8_t destination_mac)
@@ -1396,6 +1408,12 @@ bool dlmstp_init(char *ifname)
                 sizeof(user->PDU_Buffer), sizeof(struct dlmstp_packet),
                 DLMSTP_MAX_INFO_FRAMES);
             MSTP_Init(MSTP_Port);
+#if defined(ESP_PLATFORM)
+            ESP_LOGI(
+                "mstp_pfm",
+                "PFM_INSTRUMENTATION_ENABLED mac=%u",
+                (unsigned)MSTP_Port->This_Station);
+#endif
             user->Initialized = true;
         }
         status = true;

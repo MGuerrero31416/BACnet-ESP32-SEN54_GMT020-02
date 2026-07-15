@@ -30,8 +30,8 @@ const char USER_WIFI_STATIC_IP_GATEWAY[] = "10.210.245.254";
 const char USER_WIFI_STATIC_IP_NETMASK[] = "255.255.255.0";
 
 /* BACnet device settings */
-const char USER_BACNET_DEVICE_NAME[] = "ESP32_55517";
-const uint32_t USER_BACNET_DEVICE_INSTANCE = 55517; 
+const char USER_BACNET_DEVICE_NAME[] = "ESP32_55533";
+const uint32_t USER_BACNET_DEVICE_INSTANCE = 55533; 
 const int USER_OVERRIDE_NVS_ON_FLASH = 0; // Set to 1 to override NVS settings on flash with the defaults in User_Settings.c. Set to 0 to use NVS settings on flash if they exist.
 
 /* BACnet device identity settings */
@@ -42,7 +42,7 @@ const uint16_t USER_VENDOR_IDENTIFIER = 260;
 const char USER_DEVICE_LOCATION[] = "Bangkok";
 const char USER_FIRMWARE_REVISION[] = "GMT020-02-7P 2in Display";
 const char USER_APPLICATION_SOFTWARE_VERSION[] = "2026_07_14 13:23";
-const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55517_asdfg"; //CHANGE ME UNIQUE PER DEVICE
+const char USER_DEVICE_SERIAL_NUMBER[] = "ESP32_55533_asdfg"; //CHANGE ME UNIQUE PER DEVICE
 
 void User_Settings_InitDeviceIdentity(void)
 {
@@ -76,7 +76,7 @@ const uint16_t USER_BBMD_TTL_SECONDS = 600;
 
 /* BACnet MS/TP settings */
 const bool USER_ENABLE_BACNET_MSTP = true;
-const uint8_t USER_MSTP_MAC_ADDRESS = 17;
+const uint8_t USER_MSTP_MAC_ADDRESS = 33;
 const uint8_t USER_MSTP_MAX_INFO_FRAMES = 1;
 const uint8_t USER_MSTP_MAX_MASTER = 127;
 const uint32_t USER_MSTP_BAUD_RATE = 38400U;

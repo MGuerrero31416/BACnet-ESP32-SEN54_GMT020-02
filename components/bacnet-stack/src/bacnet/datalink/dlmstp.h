@@ -249,6 +249,8 @@ const char *dlmstp_send_status_text(DLMSTP_SEND_STATUS status);
 BACNET_STACK_EXPORT
 const char *dlmstp_tx_source_text(DLMSTP_TX_SOURCE source);
 BACNET_STACK_EXPORT
+const char *dlmstp_master_state_text_current(void);
+BACNET_STACK_EXPORT
 bool dlmstp_send_reply_postponed(uint8_t destination_mac);
 
 BACNET_STACK_EXPORT

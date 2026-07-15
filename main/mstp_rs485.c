@@ -9,6 +9,7 @@
 #include "bacnet/npdu.h"
 #include "bacnet/bacdef.h"
 #include "bacnet/bacenum.h"
+#include "bacnet/datalink/dlmstp.h"
 #include "bacnet/datalink/mstp.h"
 #include "bacnet/datalink/mstpdef.h"
 
@@ -420,6 +421,10 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
 {
     MSTP_TX_INFO tx_info = { 0 };
     MSTP_RS485_CONFIRMED_REQUEST_META *request_meta = NULL;
+    bool is_reply_to_pfm_frame = false;
+    bool is_token_frame = false;
+    int64_t pfm_reply_t_before_us = 0;
+    int64_t token_pass_t_before_us = 0;
 #if MSTP_DEBUG_ENABLE
     int64_t now_us = 0;
     int64_t request_to_postponed_us = -1;
@@ -441,9 +446,24 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
         MSTP_RS485_Init();
     }
 
+    if ((payload_len >= 8) &&
+        (payload[0] == 0x55) &&
+        (payload[1] == 0xFF) &&
+        (payload[2] == FRAME_TYPE_REPLY_TO_POLL_FOR_MASTER)) {
+        is_reply_to_pfm_frame = true;
+    } else if (
+        (payload_len >= 8) &&
+        (payload[0] == 0x55) &&
+        (payload[1] == 0xFF) &&
+        (payload[2] == FRAME_TYPE_TOKEN)) {
+        is_token_frame = true;
+    }
+
     mstp_tx_frame_count++;
 #if MSTP_DEBUG_ENABLE
-    mstp_log_frame_debug(payload, payload_len);
+    if (!is_reply_to_pfm_frame && !is_token_frame) {
+        mstp_log_frame_debug(payload, payload_len);
+    }
 #endif
     mstp_decode_tx_info(payload, payload_len, &tx_info);
     if (tx_info.valid && tx_info.has_invoke_id) {
@@ -456,6 +476,12 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     de_level_after_enable = gpio_get_level(MSTP_UART_DE_PIN);
     vTaskDelay(pdMS_TO_TICKS(MSTP_RS485_DE_PRE_TX_GUARD_MS));
 #endif
+
+    if (is_reply_to_pfm_frame) {
+        pfm_reply_t_before_us = esp_timer_get_time();
+    } else if (is_token_frame) {
+        token_pass_t_before_us = esp_timer_get_time();
+    }
 
     written = uart_write_bytes(MSTP_UART_PORT, payload, payload_len);
     if (written < 0) {
@@ -477,6 +503,29 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
     mstp_rs485_set_tx_mode(false);
     de_level_after_disable = gpio_get_level(MSTP_UART_DE_PIN);
 #endif
+
+    if (is_reply_to_pfm_frame) {
+        int64_t pfm_reply_t_after_us = esp_timer_get_time();
+        ESP_LOGI(
+            TAG,
+            "PFM_REPLY_TX src=%u dst=%u state=%s t_before=%lld t_after=%lld result=%s",
+            (unsigned)payload[4],
+            (unsigned)payload[3],
+            dlmstp_master_state_text_current(),
+            (long long)pfm_reply_t_before_us,
+            (long long)pfm_reply_t_after_us,
+            esp_err_to_name(tx_done));
+    } else if (is_token_frame) {
+        int64_t token_pass_t_after_us = esp_timer_get_time();
+        ESP_LOGI(
+            TAG,
+            "TOKEN_PASS_TX src=%u dst=%u t_before=%lld t_after=%lld result=%s",
+            (unsigned)payload[4],
+            (unsigned)payload[3],
+            (long long)token_pass_t_before_us,
+            (long long)token_pass_t_after_us,
+            esp_err_to_name(tx_done));
+    }
 
     if (tx_info.valid &&
         tx_info.is_data_frame &&

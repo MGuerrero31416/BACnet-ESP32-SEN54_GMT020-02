@@ -23,8 +23,13 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #if PRINT_ENABLED
 #include <stdio.h>
+#endif
+#if defined(ESP_PLATFORM)
+#include "esp_log.h"
+#include "esp_timer.h"
 #endif
 #include "bacnet/datalink/cobs.h"
 #include "bacnet/datalink/crc.h"
@@ -33,6 +38,117 @@
 #include "bacnet/datalink/mstptext.h"
 #include "bacnet/npdu.h"
 #include "bacnet/basic/sys/debug.h"
+
+#ifndef MSTP_RING_DIAGNOSTICS
+#define MSTP_RING_DIAGNOSTICS 1
+#endif
+
+#if MSTP_RING_DIAGNOSTICS
+typedef struct {
+    uint32_t pfm_to_us;
+    uint32_t pfm_replies;
+    uint32_t tokens_rx;
+    uint32_t tokens_passed;
+    uint32_t data_tx;
+    uint32_t bad_crc;
+    uint32_t invalid;
+    uint32_t lost_token;
+    time_t last_summary;
+} mstp_ring_diag_t;
+
+static mstp_ring_diag_t mstp_ring_diag = { 0 };
+
+static void mstp_ring_diag_maybe_summary(const struct mstp_port_struct_t *mstp_port)
+{
+    time_t now;
+
+    if (!mstp_port) {
+        return;
+    }
+
+    now = time(NULL);
+    if (mstp_ring_diag.last_summary == 0) {
+        mstp_ring_diag.last_summary = now;
+        return;
+    }
+    if ((now - mstp_ring_diag.last_summary) >= 30) {
+        debug_printf(
+            "MSTP_RING_SUMMARY mac=%u pfm_to_us=%lu pfm_replies=%lu tokens_rx=%lu tokens_passed=%lu data_tx=%lu bad_crc=%lu invalid=%lu lost_token=%lu\n",
+            (unsigned)mstp_port->This_Station,
+            (unsigned long)mstp_ring_diag.pfm_to_us,
+            (unsigned long)mstp_ring_diag.pfm_replies,
+            (unsigned long)mstp_ring_diag.tokens_rx,
+            (unsigned long)mstp_ring_diag.tokens_passed,
+            (unsigned long)mstp_ring_diag.data_tx,
+            (unsigned long)mstp_ring_diag.bad_crc,
+            (unsigned long)mstp_ring_diag.invalid,
+            (unsigned long)mstp_ring_diag.lost_token);
+        mstp_ring_diag.last_summary = now;
+    }
+}
+
+static void mstp_ring_diag_on_tx(
+    uint8_t frame_type,
+    uint8_t destination,
+    uint8_t source)
+{
+    switch (frame_type) {
+        case FRAME_TYPE_TOKEN:
+            mstp_ring_diag.tokens_passed++;
+            break;
+        case FRAME_TYPE_REPLY_TO_POLL_FOR_MASTER:
+            mstp_ring_diag.pfm_replies++;
+            break;
+        case FRAME_TYPE_BACNET_DATA_EXPECTING_REPLY:
+        case FRAME_TYPE_BACNET_DATA_NOT_EXPECTING_REPLY:
+        case FRAME_TYPE_BACNET_EXTENDED_DATA_EXPECTING_REPLY:
+        case FRAME_TYPE_BACNET_EXTENDED_DATA_NOT_EXPECTING_REPLY:
+            mstp_ring_diag.data_tx++;
+            break;
+        default:
+            break;
+    }
+}
+#endif
+
+static void mstp_log_token_unexpected(
+    struct mstp_port_struct_t *mstp_port,
+    const char *state_name)
+{
+    const char *state = state_name;
+
+    if (!mstp_port) {
+        return;
+    }
+    if (mstp_port->FrameType != FRAME_TYPE_TOKEN) {
+        return;
+    }
+    if (!state) {
+        state = mstptext_master_state(mstp_port->master_state);
+    }
+
+#if defined(ESP_PLATFORM)
+    if (mstp_port->DestinationAddress == mstp_port->This_Station) {
+        ESP_LOGI(
+            "mstp_token",
+            "TOKEN_UNEXPECTED state=%s src=%u dst=%u t=%lld",
+            state,
+            (unsigned)mstp_port->SourceAddress,
+            (unsigned)mstp_port->DestinationAddress,
+            (long long)esp_timer_get_time());
+    } else {
+#if MSTP_RING_DIAGNOSTICS
+        ESP_LOGD(
+            "mstp_token",
+            "TOKEN_UNEXPECTED state=%s src=%u dst=%u t=%lld",
+            state,
+            (unsigned)mstp_port->SourceAddress,
+            (unsigned)mstp_port->DestinationAddress,
+            (long long)esp_timer_get_time());
+#endif
+    }
+#endif
+}
 
 #if PRINT_ENABLED
 #undef PRINT_ENABLED_RECEIVE
@@ -271,6 +387,9 @@ void MSTP_Create_And_Send_Frame(
         destination, source, data, data_len);
 
     MSTP_Send_Frame(mstp_port, &mstp_port->OutputBuffer[0], len);
+#if MSTP_RING_DIAGNOSTICS
+    mstp_ring_diag_on_tx(frame_type, destination, source);
+#endif
     /* FIXME: be sure to reset SilenceTimer() after each octet is sent! */
 }
 
@@ -432,6 +551,9 @@ void MSTP_Receive_Frame_FSM(struct mstp_port_struct_t *mstp_port)
                         /* indicate that an error has occurred during
                            the reception of a frame */
                         mstp_port->ReceivedInvalidFrame = true;
+#if MSTP_RING_DIAGNOSTICS
+                        mstp_ring_diag.bad_crc++;
+#endif
                         printf_receive_error(
                             "MSTP: Rx Header: BadCRC [%02X]\n",
                             mstp_port->DataRegister);
@@ -576,6 +698,9 @@ void MSTP_Receive_Frame_FSM(struct mstp_port_struct_t *mstp_port)
                         } else {
                             /* BadCRC */
                             mstp_port->ReceivedInvalidFrame = true;
+#if MSTP_RING_DIAGNOSTICS
+                            mstp_ring_diag.bad_crc++;
+#endif
                             printf_receive_error(
                                 "MSTP: Rx Data: BadCRC [%02X]\n",
                                 mstp_port->DataRegister);
@@ -595,6 +720,9 @@ void MSTP_Receive_Frame_FSM(struct mstp_port_struct_t *mstp_port)
                         } else {
                             /* BadCRC */
                             mstp_port->ReceivedInvalidFrame = true;
+#if MSTP_RING_DIAGNOSTICS
+                            mstp_ring_diag.bad_crc++;
+#endif
                             printf_receive_error(
                                 "MSTP: Rx Data: BadCRC [%02X]\n",
                                 mstp_port->DataRegister);
@@ -636,6 +764,10 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
     /* transition immediately to the next state */
     bool transition_now = false;
     MSTP_MASTER_STATE master_state = mstp_port->master_state;
+
+#if MSTP_RING_DIAGNOSTICS
+    mstp_ring_diag_maybe_summary(mstp_port);
+#endif
 
     /* some calculations that several states need */
     next_poll_station =
@@ -699,6 +831,9 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 /* ReceivedInvalidFrame */
                 /* invalid frame was received */
                 /* wait for the next frame - remain in IDLE */
+#if MSTP_RING_DIAGNOSTICS
+                mstp_ring_diag.invalid++;
+#endif
                 mstp_port->ReceivedInvalidFrame = false;
             } else if (mstp_port->ReceivedValidFrameNotForUs == true) {
                 /* ReceivedValidFrameNotForUs */
@@ -723,6 +858,17 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                             MSTP_BROADCAST_ADDRESS) {
                             break;
                         }
+#if MSTP_RING_DIAGNOSTICS
+                        mstp_ring_diag.tokens_rx++;
+#endif
+#if defined(ESP_PLATFORM)
+                        ESP_LOGI(
+                            "mstp_token",
+                            "TOKEN_RX src=%u dst=%u t=%lld",
+                            (unsigned)mstp_port->SourceAddress,
+                            (unsigned)mstp_port->DestinationAddress,
+                            (long long)esp_timer_get_time());
+#endif
                         mstp_port->ReceivedValidFrame = false;
                         mstp_port->FrameCount = 0;
                         mstp_port->SoleMaster = false;
@@ -734,10 +880,28 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                         /* DestinationAddress is equal to TS */
                         if (mstp_port->DestinationAddress ==
                             mstp_port->This_Station) {
+#if MSTP_RING_DIAGNOSTICS
+                            mstp_ring_diag.pfm_to_us++;
+#endif
+#if defined(ESP_PLATFORM)
+                            ESP_LOGI(
+                                "mstp_pfm",
+                                "PFM_RX src=%u dst=%u t=%lld",
+                                (unsigned)mstp_port->SourceAddress,
+                                (unsigned)mstp_port->DestinationAddress,
+                                (long long)esp_timer_get_time());
+#endif
                             MSTP_Create_And_Send_Frame(
                                 mstp_port, FRAME_TYPE_REPLY_TO_POLL_FOR_MASTER,
                                 mstp_port->SourceAddress,
                                 mstp_port->This_Station, NULL, 0);
+                        } else {
+#if defined(ESP_PLATFORM)
+                            ESP_LOGI(
+                                "mstp_pfm",
+                                "PFM_REPLY_SKIPPED reason=not_for_us t=%lld",
+                                (long long)esp_timer_get_time());
+#endif
                         }
                         break;
                     case FRAME_TYPE_BACNET_DATA_NOT_EXPECTING_REPLY:
@@ -792,6 +956,9 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 mstp_port->SilenceTimer((void *)mstp_port) >= Tno_token) {
                 /* LostToken */
                 /* assume that the token has been lost */
+#if MSTP_RING_DIAGNOSTICS
+                mstp_ring_diag.lost_token++;
+#endif
                 mstp_port->EventCount = 0; /* Addendum 135-2004d-8 */
                 mstp_port->master_state = MSTP_MASTER_STATE_NO_TOKEN;
                 /* set the receive frame flags to false in case we received
@@ -818,6 +985,13 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 uint8_t destination = mstp_port->OutputBuffer[3];
                 MSTP_Send_Frame(
                     mstp_port, &mstp_port->OutputBuffer[0], (uint16_t)length);
+#if MSTP_RING_DIAGNOSTICS
+                if (length >= 5) {
+                    mstp_ring_diag_on_tx(
+                        mstp_port->OutputBuffer[2], mstp_port->OutputBuffer[3],
+                        mstp_port->OutputBuffer[4]);
+                }
+#endif
                 mstp_port->FrameCount++;
                 switch (frame_type) {
                     case FRAME_TYPE_BACNET_DATA_EXPECTING_REPLY:
@@ -864,6 +1038,11 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 if ((mstp_port->ReceivedInvalidFrame == true) ||
                     (mstp_port->ReceivedValidFrameNotForUs == true)) {
                     /* InvalidFrame in this state */
+#if MSTP_RING_DIAGNOSTICS
+                    if (mstp_port->ReceivedInvalidFrame == true) {
+                        mstp_ring_diag.invalid++;
+                    }
+#endif
                     mstp_port->ReceivedInvalidFrame = false;
                     mstp_port->ReceivedValidFrameNotForUs = false;
                     mstp_port->master_state = MSTP_MASTER_STATE_DONE_WITH_TOKEN;
@@ -882,6 +1061,20 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                                     MSTP_MASTER_STATE_DONE_WITH_TOKEN;
                                 break;
                             case FRAME_TYPE_TOKEN:
+#if defined(ESP_PLATFORM)
+                                if (mstp_port->DestinationAddress ==
+                                    mstp_port->This_Station) {
+                                    ESP_LOGI(
+                                        "mstp_token",
+                                        "TOKEN_RX_OUT_OF_STATE state=WAIT_FOR_REPLY src=%u dst=%u t=%lld",
+                                        (unsigned)mstp_port->SourceAddress,
+                                        (unsigned)mstp_port->DestinationAddress,
+                                        (long long)esp_timer_get_time());
+                                }
+#endif
+                                mstp_log_token_unexpected(
+                                    mstp_port, "WAIT_FOR_REPLY");
+                                /* fall through */
                             case FRAME_TYPE_POLL_FOR_MASTER:
                             case FRAME_TYPE_REPLY_TO_POLL_FOR_MASTER:
                             case FRAME_TYPE_TEST_REQUEST:
@@ -905,6 +1098,7 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     } else {
                         /* ReceivedUnexpectedFrame */
                         /* an unexpected frame was received */
+                        mstp_log_token_unexpected(mstp_port, "WAIT_FOR_REPLY");
                         /* This may indicate the presence of multiple tokens. */
                         /* Synchronize with the network. */
                         /* This action drops the token. */
@@ -930,6 +1124,12 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 /* NextStationUnknown - added in Addendum 135-2008v-1 */
                 /*  then the next station to which the token
                    should be sent is unknown - so PollForMaster */
+#if defined(ESP_PLATFORM)
+                ESP_LOGI(
+                    "mstp_token",
+                    "TOKEN_PASS_SKIPPED reason=next_station_unknown t=%lld",
+                    (long long)esp_timer_get_time());
+#endif
                 mstp_port->Poll_Station = next_this_station;
                 MSTP_Create_And_Send_Frame(
                     mstp_port, FRAME_TYPE_POLL_FOR_MASTER,
@@ -962,6 +1162,14 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_NEXT our=%u next=%u t=%lld",
+                        (unsigned)mstp_port->This_Station,
+                        (unsigned)mstp_port->Next_Station,
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->RetryCount = 0;
                     mstp_port->EventCount = 0;
                     mstp_port->master_state = MSTP_MASTER_STATE_PASS_TOKEN;
@@ -990,6 +1198,14 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_NEXT our=%u next=%u t=%lld",
+                        (unsigned)mstp_port->This_Station,
+                        (unsigned)mstp_port->Next_Station,
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->RetryCount = 0;
                     /* changed in Errata SSPC-135-2004 */
                     mstp_port->TokenCount = 1;
@@ -998,6 +1214,12 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 }
             } else {
                 /* SendMaintenancePFM */
+#if defined(ESP_PLATFORM)
+                ESP_LOGI(
+                    "mstp_token",
+                    "TOKEN_PASS_SKIPPED reason=maintenance_pfm t=%lld",
+                    (long long)esp_timer_get_time());
+#endif
                 mstp_port->Poll_Station = next_poll_station;
                 MSTP_Create_And_Send_Frame(
                     mstp_port, FRAME_TYPE_POLL_FOR_MASTER,
@@ -1022,11 +1244,25 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
             } else {
                 if (mstp_port->RetryCount < Nretry_token) {
                     /* RetrySendToken */
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_PASS_SKIPPED reason=retry_send_token t=%lld",
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->RetryCount++;
                     /* Transmit a Token frame to NS */
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_NEXT our=%u next=%u t=%lld",
+                        (unsigned)mstp_port->This_Station,
+                        (unsigned)mstp_port->Next_Station,
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->EventCount = 0;
                     /* re-enter the current state to listen for NS  */
                     /* to begin using the token. */
@@ -1034,6 +1270,12 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     /* FindNewSuccessor */
                     /* Assume that NS has failed.  */
                     /* note: if NS=TS-1, this node could send PFM to self! */
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_PASS_SKIPPED reason=retry_exceeded t=%lld",
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->Poll_Station = next_next_station;
                     /* Transmit a Poll For Master frame to PS. */
                     MSTP_Create_And_Send_Frame(
@@ -1124,6 +1366,14 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_NEXT our=%u next=%u t=%lld",
+                        (unsigned)mstp_port->This_Station,
+                        (unsigned)mstp_port->Next_Station,
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->Poll_Station = mstp_port->This_Station;
                     mstp_port->TokenCount = 0;
                     mstp_port->RetryCount = 0;
@@ -1131,6 +1381,7 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 } else {
                     /* ReceivedUnexpectedFrame */
                     /* An unexpected frame was received.  */
+                    mstp_log_token_unexpected(mstp_port, "POLL_FOR_MASTER");
                     /* This may indicate the presence of multiple tokens. */
                     /* enter the IDLE state to synchronize with the network.  */
                     /* This action drops the token. */
@@ -1143,10 +1394,21 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                  mstp_port->Tusage_timeout) ||
                 (mstp_port->ReceivedInvalidFrame == true) ||
                 (mstp_port->ReceivedValidFrameNotForUs == true)) {
+#if MSTP_RING_DIAGNOSTICS
+                if (mstp_port->ReceivedInvalidFrame == true) {
+                    mstp_ring_diag.invalid++;
+                }
+#endif
                 if (mstp_port->SoleMaster == true) {
                     /* SoleMaster */
                     /* There was no valid reply to the periodic poll  */
                     /* by the sole known master for other masters. */
+#if defined(ESP_PLATFORM)
+                    ESP_LOGI(
+                        "mstp_token",
+                        "TOKEN_PASS_SKIPPED reason=sole_master t=%lld",
+                        (long long)esp_timer_get_time());
+#endif
                     mstp_port->FrameCount = 0;
                     /* mstp_port->TokenCount++; removed in 2004 */
                     mstp_port->master_state = MSTP_MASTER_STATE_USE_TOKEN;
@@ -1162,6 +1424,14 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                             mstp_port, FRAME_TYPE_TOKEN,
                             mstp_port->Next_Station, mstp_port->This_Station,
                             NULL, 0);
+#if defined(ESP_PLATFORM)
+                        ESP_LOGI(
+                            "mstp_token",
+                            "TOKEN_NEXT our=%u next=%u t=%lld",
+                            (unsigned)mstp_port->This_Station,
+                            (unsigned)mstp_port->Next_Station,
+                            (long long)esp_timer_get_time());
+#endif
                         mstp_port->RetryCount = 0;
                         mstp_port->master_state = MSTP_MASTER_STATE_PASS_TOKEN;
                     } else {
@@ -1210,6 +1480,13 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 /* and enter the IDLE state to wait for the next frame. */
                 MSTP_Send_Frame(
                     mstp_port, &mstp_port->OutputBuffer[0], (uint16_t)length);
+#if MSTP_RING_DIAGNOSTICS
+                if (length >= 5) {
+                    mstp_ring_diag_on_tx(
+                        mstp_port->OutputBuffer[2], mstp_port->OutputBuffer[3],
+                        mstp_port->OutputBuffer[4]);
+                }
+#endif
                 mstp_port->master_state = MSTP_MASTER_STATE_IDLE;
                 /* clear our flag we were holding for comparison */
                 mstp_port->ReceivedValidFrame = false;
@@ -1265,6 +1542,9 @@ void MSTP_Slave_Node_FSM(struct mstp_port_struct_t *mstp_port)
     if (mstp_port->ReceivedInvalidFrame == true) {
         /* ReceivedInvalidFrame */
         /* invalid frame was received */
+#if MSTP_RING_DIAGNOSTICS
+        mstp_ring_diag.invalid++;
+#endif
         mstp_port->ReceivedInvalidFrame = false;
     } else if (mstp_port->ReceivedValidFrameNotForUs) {
         /* ReceivedValidFrameNotForUs */
@@ -1303,6 +1583,8 @@ void MSTP_Slave_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     &mstp_port->InputBuffer[0], mstp_port->DataLength);
                 break;
             case FRAME_TYPE_TOKEN:
+                mstp_log_token_unexpected(mstp_port, "ANSWER_DATA_REQUEST");
+                /* fall through */
             case FRAME_TYPE_POLL_FOR_MASTER:
             case FRAME_TYPE_TEST_RESPONSE:
             default:
@@ -1326,6 +1608,13 @@ void MSTP_Slave_Node_FSM(struct mstp_port_struct_t *mstp_port)
              */
             MSTP_Send_Frame(
                 mstp_port, &mstp_port->OutputBuffer[0], (uint16_t)length);
+#if MSTP_RING_DIAGNOSTICS
+            if (length >= 5) {
+                mstp_ring_diag_on_tx(
+                    mstp_port->OutputBuffer[2], mstp_port->OutputBuffer[3],
+                    mstp_port->OutputBuffer[4]);
+            }
+#endif
             /* clear our flag we were holding for comparison */
             mstp_port->ReceivedValidFrame = false;
         } else if (

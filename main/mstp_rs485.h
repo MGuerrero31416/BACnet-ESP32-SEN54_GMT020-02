@@ -12,6 +12,10 @@
 #define MSTP_DEBUG_ENABLE 0
 #endif
 
+#ifndef MSTP_RS485_AUTO_DIRECTION_PROFILE
+#define MSTP_RS485_AUTO_DIRECTION_PROFILE 1
+#endif
+
 typedef struct {
 	bool valid;
 	uint8_t invoke_id;

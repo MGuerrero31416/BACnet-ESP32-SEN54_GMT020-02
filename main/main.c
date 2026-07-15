@@ -631,6 +631,9 @@ static bool bacnet_mstp_init(void)
     dlmstp_set_max_info_frames(USER_MSTP_MAX_INFO_FRAMES);
     dlmstp_set_max_master(USER_MSTP_MAX_MASTER);
     dlmstp_set_baud_rate(USER_MSTP_BAUD_RATE);
+    if (MSTP_RS485_AUTO_DIRECTION_PROFILE) {
+        mstp_port.Tturnaround_timeout = 0;
+    }
     dlmstp_check_auto_baud_set(USER_MSTP_AUTO_BAUD);
     dlmstp_slave_mode_enabled_set(false);
 
