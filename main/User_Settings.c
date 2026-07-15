@@ -14,7 +14,11 @@ static const char *user_settings_bool_text(bool value)
 }
 
 /* WiFi settings */
-const bool USER_ENABLE_BACNET_IP = false;
+#ifndef USER_ENABLE_BACNET_IP_DEFAULT
+#define USER_ENABLE_BACNET_IP_DEFAULT false
+#endif
+const bool USER_ENABLE_BACNET_IP =
+    (USER_MSTP_PRODUCTION_TIMING_TEST ? false : USER_ENABLE_BACNET_IP_DEFAULT);
 /* Edit these locally if you want to override the hidden defaults from
  * User_Settings_private.h. Keep real credentials out of GitHub.
  */

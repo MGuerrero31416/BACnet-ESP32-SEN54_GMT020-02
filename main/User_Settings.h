@@ -8,10 +8,18 @@
 #define USER_SETTINGS_PRINT_ENABLE 1
 #endif
 
+#ifndef USER_MSTP_PRODUCTION_TIMING_TEST
+#define USER_MSTP_PRODUCTION_TIMING_TEST 0
+#endif
+
 /* Compile-time switch to enable/disable the SEN54 hardware interface.
  * Set to 0 to disable the SEN54 driver and task (reversible).
  */
+#if USER_MSTP_PRODUCTION_TIMING_TEST
+#define BOARD_SEN54_ENABLED 0
+#else
 #define BOARD_SEN54_ENABLED 1
+#endif
 
 #ifndef USER_BACNET_ROUTED_COMPAT_MODE
 #define USER_BACNET_ROUTED_COMPAT_MODE 0

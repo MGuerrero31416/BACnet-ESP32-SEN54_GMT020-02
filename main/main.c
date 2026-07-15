@@ -67,6 +67,12 @@ static const char *TAG = "bacnet";
 #define BACNET_DISCOVERY_DEBUG 0
 #endif
 
+#if USER_MSTP_PRODUCTION_TIMING_TEST
+#define BACNET_MSTP_RX_TASK_PRIORITY 18
+#else
+#define BACNET_MSTP_RX_TASK_PRIORITY 5
+#endif
+
 #define MSTP_TRANSPORT_BUFFER_SIZE 1024
 #define MSTP_APDU_BUFFER_SIZE 1024
 
@@ -236,6 +242,7 @@ static void bacnet_log_whois_iam(const uint8_t *apdu, int apdu_len, const char *
         }
 #endif
     } else if (service_choice == SERVICE_UNCONFIRMED_I_AM) {
+#if !USER_MSTP_PRODUCTION_TIMING_TEST
         uint32_t device_id = BACNET_MAX_INSTANCE;
         unsigned max_apdu = 0;
         int segmentation = SEGMENTATION_NONE;
@@ -253,6 +260,7 @@ static void bacnet_log_whois_iam(const uint8_t *apdu, int apdu_len, const char *
         } else {
             ESP_LOGW(TAG, "%s I-Am decode failed len=%d", link, apdu_len);
         }
+#endif
     }
 }
 
@@ -897,8 +905,10 @@ void app_main(void)
     }
 
     /* Initialize display */
+#if !USER_MSTP_PRODUCTION_TIMING_TEST
     ESP_LOGI(TAG, "Initializing display");
     display_init();
+#endif
 
     /* Start BACnet receive task to handle incoming messages */
     if (s_bacnet_ip_active) {
@@ -907,7 +917,13 @@ void app_main(void)
         }
     }
     if (USER_ENABLE_BACNET_MSTP) {
-        if (xTaskCreate(bacnet_mstp_receive_task, "bacnet_mstp_rx", 12288, NULL, 5, NULL) != pdPASS) {
+        if (xTaskCreate(
+                bacnet_mstp_receive_task,
+                "bacnet_mstp_rx",
+                12288,
+                NULL,
+                BACNET_MSTP_RX_TASK_PRIORITY,
+                NULL) != pdPASS) {
             ESP_LOGE(TAG, "Failed to create bacnet_mstp_rx task");
         }
     }
@@ -1002,10 +1018,11 @@ void app_main(void)
             mstp_alive_ticks = 0;
         }
 
+#if !USER_MSTP_PRODUCTION_TIMING_TEST
         display_set_link_status(
             wifi_connected_now(),
             USER_ENABLE_BACNET_MSTP && (mstp_alive_ticks > 0));
-        
+
         /* Update display every 2 seconds */
         if (++display_tick % 2 == 0) {
             float av1 = Analog_Value_Present_Value(1);
@@ -1020,6 +1037,9 @@ void app_main(void)
                 USER_MSTP_MAC_ADDRESS,
                 ip_text);
         }
+#else
+        (void)display_tick;
+#endif
         
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
