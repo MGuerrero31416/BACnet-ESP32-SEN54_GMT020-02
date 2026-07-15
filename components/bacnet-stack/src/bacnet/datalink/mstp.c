@@ -895,13 +895,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                                 mstp_port, FRAME_TYPE_REPLY_TO_POLL_FOR_MASTER,
                                 mstp_port->SourceAddress,
                                 mstp_port->This_Station, NULL, 0);
-                        } else {
-#if defined(ESP_PLATFORM)
-                            ESP_LOGI(
-                                "mstp_pfm",
-                                "PFM_REPLY_SKIPPED reason=not_for_us t=%lld",
-                                (long long)esp_timer_get_time());
-#endif
                         }
                         break;
                     case FRAME_TYPE_BACNET_DATA_NOT_EXPECTING_REPLY:
@@ -1061,17 +1054,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                                     MSTP_MASTER_STATE_DONE_WITH_TOKEN;
                                 break;
                             case FRAME_TYPE_TOKEN:
-#if defined(ESP_PLATFORM)
-                                if (mstp_port->DestinationAddress ==
-                                    mstp_port->This_Station) {
-                                    ESP_LOGI(
-                                        "mstp_token",
-                                        "TOKEN_RX_OUT_OF_STATE state=WAIT_FOR_REPLY src=%u dst=%u t=%lld",
-                                        (unsigned)mstp_port->SourceAddress,
-                                        (unsigned)mstp_port->DestinationAddress,
-                                        (long long)esp_timer_get_time());
-                                }
-#endif
                                 mstp_log_token_unexpected(
                                     mstp_port, "WAIT_FOR_REPLY");
                                 /* fall through */
@@ -1124,12 +1106,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 /* NextStationUnknown - added in Addendum 135-2008v-1 */
                 /*  then the next station to which the token
                    should be sent is unknown - so PollForMaster */
-#if defined(ESP_PLATFORM)
-                ESP_LOGI(
-                    "mstp_token",
-                    "TOKEN_PASS_SKIPPED reason=next_station_unknown t=%lld",
-                    (long long)esp_timer_get_time());
-#endif
                 mstp_port->Poll_Station = next_this_station;
                 MSTP_Create_And_Send_Frame(
                     mstp_port, FRAME_TYPE_POLL_FOR_MASTER,
@@ -1162,14 +1138,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_NEXT our=%u next=%u t=%lld",
-                        (unsigned)mstp_port->This_Station,
-                        (unsigned)mstp_port->Next_Station,
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->RetryCount = 0;
                     mstp_port->EventCount = 0;
                     mstp_port->master_state = MSTP_MASTER_STATE_PASS_TOKEN;
@@ -1198,14 +1166,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_NEXT our=%u next=%u t=%lld",
-                        (unsigned)mstp_port->This_Station,
-                        (unsigned)mstp_port->Next_Station,
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->RetryCount = 0;
                     /* changed in Errata SSPC-135-2004 */
                     mstp_port->TokenCount = 1;
@@ -1214,12 +1174,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                 }
             } else {
                 /* SendMaintenancePFM */
-#if defined(ESP_PLATFORM)
-                ESP_LOGI(
-                    "mstp_token",
-                    "TOKEN_PASS_SKIPPED reason=maintenance_pfm t=%lld",
-                    (long long)esp_timer_get_time());
-#endif
                 mstp_port->Poll_Station = next_poll_station;
                 MSTP_Create_And_Send_Frame(
                     mstp_port, FRAME_TYPE_POLL_FOR_MASTER,
@@ -1244,25 +1198,11 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
             } else {
                 if (mstp_port->RetryCount < Nretry_token) {
                     /* RetrySendToken */
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_PASS_SKIPPED reason=retry_send_token t=%lld",
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->RetryCount++;
                     /* Transmit a Token frame to NS */
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_NEXT our=%u next=%u t=%lld",
-                        (unsigned)mstp_port->This_Station,
-                        (unsigned)mstp_port->Next_Station,
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->EventCount = 0;
                     /* re-enter the current state to listen for NS  */
                     /* to begin using the token. */
@@ -1270,12 +1210,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     /* FindNewSuccessor */
                     /* Assume that NS has failed.  */
                     /* note: if NS=TS-1, this node could send PFM to self! */
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_PASS_SKIPPED reason=retry_exceeded t=%lld",
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->Poll_Station = next_next_station;
                     /* Transmit a Poll For Master frame to PS. */
                     MSTP_Create_And_Send_Frame(
@@ -1366,14 +1300,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     MSTP_Create_And_Send_Frame(
                         mstp_port, FRAME_TYPE_TOKEN, mstp_port->Next_Station,
                         mstp_port->This_Station, NULL, 0);
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_NEXT our=%u next=%u t=%lld",
-                        (unsigned)mstp_port->This_Station,
-                        (unsigned)mstp_port->Next_Station,
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->Poll_Station = mstp_port->This_Station;
                     mstp_port->TokenCount = 0;
                     mstp_port->RetryCount = 0;
@@ -1403,12 +1329,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                     /* SoleMaster */
                     /* There was no valid reply to the periodic poll  */
                     /* by the sole known master for other masters. */
-#if defined(ESP_PLATFORM)
-                    ESP_LOGI(
-                        "mstp_token",
-                        "TOKEN_PASS_SKIPPED reason=sole_master t=%lld",
-                        (long long)esp_timer_get_time());
-#endif
                     mstp_port->FrameCount = 0;
                     /* mstp_port->TokenCount++; removed in 2004 */
                     mstp_port->master_state = MSTP_MASTER_STATE_USE_TOKEN;
@@ -1424,14 +1344,6 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                             mstp_port, FRAME_TYPE_TOKEN,
                             mstp_port->Next_Station, mstp_port->This_Station,
                             NULL, 0);
-#if defined(ESP_PLATFORM)
-                        ESP_LOGI(
-                            "mstp_token",
-                            "TOKEN_NEXT our=%u next=%u t=%lld",
-                            (unsigned)mstp_port->This_Station,
-                            (unsigned)mstp_port->Next_Station,
-                            (long long)esp_timer_get_time());
-#endif
                         mstp_port->RetryCount = 0;
                         mstp_port->master_state = MSTP_MASTER_STATE_PASS_TOKEN;
                     } else {

@@ -25,7 +25,7 @@ In addition to being a complete air quality monitor, this project serves as a fl
 - **BACnet/IP Protocol** – Full BACnet/IP implementation over Wi-Fi
 - **BACnet MS/TP** – RS-485 MS/TP support running simultaneously with BACnet/IP
 - **Live Display** – Real-time display of selected BACnet object values on a 170×320 ST7789 TFT
-- **24 BACnet Objects**
+- **27 BACnet Objects**
   - 1 Device object
   - 16 Analog Values (AV1–AV16)
   - 4 Binary Values (BV1–BV4)
@@ -84,7 +84,7 @@ The integrated Sensirion SEN54 driver provides:
 - **Development Board:** ESP32-WROOM-32 DevKit (or compatible ESP32 module)
 - **Display:** ST7789 SPI TFT (170×320 pixels)
 - **Air Quality Sensor:** Sensirion SEN54
-- **RS-485 Transceiver:** MAX485 (or compatible)
+- **RS-485 Transceiver:** Waveshare TTl to RS485, MAX485, or compatible
 
 ## Hardware Components
 
@@ -163,17 +163,17 @@ The default BACnet mapping can be modified by editing `sen54_task()` in [main/ma
 - Transceiver: MAX485 (or compatible)
 - UART: UART2
 - Default baud rate: **38400**
-- Default MAC Address: **96**
-- Default Max Master: **127**
-- Default Max Info Frames: **80**
+- Default MAC Address: **33**
+- Default Max Master: **33** (timing-test profile) or **127** (normal profile)
+- Default Max Info Frames: **1**
 
 #### Connections
 
 | MAX485 Pin | ESP32 GPIO |
 |------------|-----------:|
-| DE/RE | GPIO5 |
-| DI (TX) | GPIO16 |
-| RO (RX) | GPIO17 |
+| DE/RE | Not used (UART RS-485 auto-direction) |
+| DI (TX) | GPIO17 |
+| RO (RX) | GPIO16 |
 
 > **Note**
 >
@@ -239,11 +239,11 @@ Most user-configurable settings are centralized in [main/User_Settings.c](main/U
 
 - **Binary Values (BV1-4)**: Configure names, descriptions, active/inactive text, and initial states in [main/User_Settings.c](main/User_Settings.c)
 
-- **Analog Inputs (AI1-4)**: Configure names, descriptions, units, and COV increments in [main/User_Settings.c](main/User_Settings.c). Read-only inputs suitable for sensor integration.
+- **Analog Inputs (AI1)**: Configure names, descriptions, units, and COV increments in [main/User_Settings.c](main/User_Settings.c). Read-only inputs suitable for sensor integration.
 
 - **Binary Inputs (BI1-4)**: Configure names, descriptions, active/inactive text in [main/User_Settings.c](main/User_Settings.c). Read-only binary states.
 
-- **Binary Outputs (BO1-4)**: Configure names, descriptions, active/inactive text, and initial states in [main/User_Settings.c](main/User_Settings.c). Writable control outputs with priority support.
+- **Binary Outputs (BO1)**: Configure names, descriptions, active/inactive text, and initial states in [main/User_Settings.c](main/User_Settings.c). Writable control outputs with priority support.
 
 ### Sensor Data Mapping
 
@@ -284,12 +284,12 @@ The device broadcasts its Device ID and manages BACnet objects that can be read/
 
 ### BACnet Objects Exposed
 
-- **Device**: 55596 (configurable in [main/User_Settings.c](main/User_Settings.c))
-- **Analog Values**: Instance 1, 2, 3, 4, 5, 6, 7
+- **Device**: 55533 (configurable in [main/User_Settings.c](main/User_Settings.c))
+- **Analog Values**: Instance 1-16
 - **Binary Values**: Instance 1, 2, 3, 4
-- **Analog Inputs**: Instance 1, 2, 3, 4
+- **Analog Inputs**: Instance 1
 - **Binary Inputs**: Instance 1, 2, 3, 4
-- **Binary Outputs**: Instance 1, 2, 3, 4
+- **Binary Outputs**: Instance 1
 
 ## Modifications to bacnet-stack
 
@@ -335,61 +335,24 @@ Ensure `CONFIG_FREERTOS_HZ=1000` is set in [sdkconfig](sdkconfig) and rebuild wi
 - [ESP-IDF Documentation](https://docs.espressif.com/projects/esp-idf/en/stable/)
 
 
-## Display selection & recent changes
+## Display Selection
 
-A reversible build-time display selection was added so you can choose between the original HW657A display and a provisional 240×320 ST7789 display from `menuconfig`.
+Display profile selection is build-time configurable from `menuconfig`.
 
-- Menu: `Application Configuration` → `Display hardware`
-- Configuration symbols added: `CONFIG_DISPLAY_HW657A`, `CONFIG_DISPLAY_ST7789_240X320` (provisional is the temporary default)
+- Menu: `Application Configuration` -> `Display hardware`
+- Supported symbols: `CONFIG_DISPLAY_HW657A`, `CONFIG_DISPLAY_ST7789_240X320`
+- Selection logic: [components/TFT_eSPI/User_Setup_Select.h](components/TFT_eSPI/User_Setup_Select.h)
+- Display setup headers:
+  - [components/TFT_eSPI/User_Setups/User_Setup_HW657A.h](components/TFT_eSPI/User_Setups/User_Setup_HW657A.h)
+  - [components/TFT_eSPI/User_Setups/User_Setup_ST7789_240x320.h](components/TFT_eSPI/User_Setups/User_Setup_ST7789_240x320.h)
 
-Files created
-- [components/TFT_eSPI/User_Setups/User_Setup_ST7789_240x320.h](components/TFT_eSPI/User_Setups/User_Setup_ST7789_240x320.h) — provisional ST7789 setup (TFT_CS moved to GPIO25)
-- [components/TFT_eSPI/User_Setups/User_Setup_HW657A.h](components/TFT_eSPI/User_Setups/User_Setup_HW657A.h) — preserved copy of the original setup
-- [main/Kconfig.projbuild](main/Kconfig.projbuild) — added display selection
-
-Files modified
-- [components/TFT_eSPI/User_Setup_Select.h](components/TFT_eSPI/User_Setup_Select.h) — selects setup header by `CONFIG_` symbol
-- [main/CMakeLists.txt](main/CMakeLists.txt) — ensured `BOARD_RS485_PHY_ENABLED=1` and defined `BOARD_BACNET_MSTP_ENABLED=1`
-- [main/display.cpp](main/display.cpp) — conditional initialization, one-time startup info log, and layout adapted to use `tft.width()`/`tft.height()` where practical
-
-Final pin assignments (current)
-
-Provisional ST7789 display
-
- - `TFT_MOSI` = GPIO23
- - `TFT_SCLK` = GPIO18
- - `TFT_CS`   = GPIO25
- - `TFT_DC`   = GPIO27
- - `TFT_RST`  = GPIO33
-
-MAX485 / BACnet MS/TP
-
- - UART TX = GPIO17
- - UART RX = GPIO16
- - DE/RE (direction) = GPIO5
-
-RS-485 and BACnet
-
-- `BOARD_RS485_PHY_ENABLED` is restored to `1` (RS-485 transceiver enabled).
-- `BOARD_BACNET_MSTP_ENABLED` is defined as `1` so BACnet MS/TP remains active.
-- The MS/TP code (`main/mstp_rs485.c`) restores the normal DE/RE GPIO configuration and UART pin assignments; no MS/TP protocol, object, or state-machine code was changed.
-
-Build and verify locally
+### Build After Changing Display Profile
 
 ```powershell
-idf.py fullclean
-idf.py build
-
-# To switch displays:
 idf.py menuconfig
 # Application Configuration -> Display hardware -> choose the desired profile
 idf.py fullclean
 idf.py build
 ```
-
-Notes
-
-- The provisional display configuration intentionally does not assume a backlight GPIO, touch controller, or panel offsets.
-- No BACnet, SEN54, Wi‑Fi, NVS, or MS/TP protocol logic was modified — only component selection, a preserved setup header, and a small display-init adaptation were added.
 
 

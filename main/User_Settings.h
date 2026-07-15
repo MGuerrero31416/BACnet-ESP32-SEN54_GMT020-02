@@ -9,7 +9,7 @@
 #endif
 
 #ifndef USER_MSTP_PRODUCTION_TIMING_TEST
-#define USER_MSTP_PRODUCTION_TIMING_TEST 0
+#define USER_MSTP_PRODUCTION_TIMING_TEST 1
 #endif
 
 /* Compile-time switch to enable/disable the SEN54 hardware interface.
