@@ -977,8 +977,21 @@ void app_main(void)
                     (unsigned long)mstp_stats.receive_invalid_frame_counter,
                     (unsigned long)mstp_stats.lost_token_counter);
             }
+            ESP_LOGI(
+                TAG,
+                "MS/TP status(30s): pdu=%lu apdu=%lu tx=%lu rx=%lu pfm=%lu err=%lu/%lu/%lu",
+                (unsigned long)mstp_pdu_count,
+                (unsigned long)mstp_apdu_count,
+                (unsigned long)mstp_stats.transmit_frame_counter,
+                (unsigned long)mstp_stats.receive_pdu_counter,
+                (unsigned long)mstp_stats.poll_for_master_counter,
+                (unsigned long)mstp_stats.bad_crc_counter,
+                (unsigned long)mstp_stats.receive_invalid_frame_counter,
+                (unsigned long)mstp_stats.lost_token_counter);
 #if MSTP_DEBUG_ENABLE
-            else {
+            if (mstp_stats.bad_crc_counter == 0 &&
+                mstp_stats.receive_invalid_frame_counter == 0 &&
+                mstp_stats.lost_token_counter == 0) {
                 ESP_LOGD(
                     TAG,
                     "MS/TP 30s stats: rx_bytes=%lu preamble55=%lu preamble55ff=%lu pdu=%lu apdu=%lu rp=%lu wp=%lu valid=%lu invalid=%lu not_for_us=%lu bad_crc=%lu tx_frames=%lu rx_pdu=%lu poll=%lu lost_token=%lu sole_master=%d",

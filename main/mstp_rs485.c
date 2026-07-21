@@ -16,13 +16,9 @@
 #define MSTP_UART_PORT UART_NUM_2
 #define MSTP_UART_TX_PIN GPIO_NUM_17
 #define MSTP_UART_RX_PIN GPIO_NUM_16
-#define MSTP_RS485_AUTO_DIRECTION 1
-#define MSTP_RS485_HAS_DE_PIN 0
-#ifdef GPIO_NUM_NC
-#define MSTP_UART_DE_PIN GPIO_NUM_NC
-#else
-#define MSTP_UART_DE_PIN ((gpio_num_t)-1)
-#endif
+#define MSTP_RS485_AUTO_DIRECTION 0
+#define MSTP_RS485_HAS_DE_PIN 1
+#define MSTP_UART_DE_PIN GPIO_NUM_18
 #define MSTP_UART_BAUD_DEFAULT 38400U
 #define MSTP_UART_RX_BUF_SIZE 4096
 #define MSTP_UART_TX_BUF_SIZE 1024
@@ -506,6 +502,7 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
 
     if (is_reply_to_pfm_frame) {
         int64_t pfm_reply_t_after_us = esp_timer_get_time();
+#if MSTP_DEBUG_ENABLE
         ESP_LOGI(
             TAG,
             "PFM_REPLY_TX src=%u dst=%u state=%s t_before=%lld t_after=%lld result=%s",
@@ -515,8 +512,13 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
             (long long)pfm_reply_t_before_us,
             (long long)pfm_reply_t_after_us,
             esp_err_to_name(tx_done));
+        #else
+            (void)pfm_reply_t_before_us;
+            (void)pfm_reply_t_after_us;
+        #endif
     } else if (is_token_frame) {
         int64_t token_pass_t_after_us = esp_timer_get_time();
+        #if MSTP_DEBUG_ENABLE
         ESP_LOGI(
             TAG,
             "TOKEN_PASS_TX src=%u dst=%u t_before=%lld t_after=%lld result=%s",
@@ -525,6 +527,10 @@ void MSTP_RS485_Send(const uint8_t *payload, uint16_t payload_len)
             (long long)token_pass_t_before_us,
             (long long)token_pass_t_after_us,
             esp_err_to_name(tx_done));
+        #else
+            (void)token_pass_t_before_us;
+            (void)token_pass_t_after_us;
+        #endif
     }
 
     if (tx_info.valid &&

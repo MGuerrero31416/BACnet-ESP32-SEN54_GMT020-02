@@ -57,6 +57,9 @@ typedef struct {
 } mstp_ring_diag_t;
 
 static mstp_ring_diag_t mstp_ring_diag = { 0 };
+#if defined(ESP_PLATFORM)
+static bool mstp_ring_join_logged = false;
+#endif
 
 static void mstp_ring_diag_maybe_summary(const struct mstp_port_struct_t *mstp_port)
 {
@@ -129,7 +132,7 @@ static void mstp_log_token_unexpected(
 
 #if defined(ESP_PLATFORM)
     if (mstp_port->DestinationAddress == mstp_port->This_Station) {
-        ESP_LOGI(
+        ESP_LOGW(
             "mstp_token",
             "TOKEN_UNEXPECTED state=%s src=%u dst=%u t=%lld",
             state,
@@ -138,7 +141,7 @@ static void mstp_log_token_unexpected(
             (long long)esp_timer_get_time());
     } else {
 #if MSTP_RING_DIAGNOSTICS
-        ESP_LOGD(
+    ESP_LOGD(
             "mstp_token",
             "TOKEN_UNEXPECTED state=%s src=%u dst=%u t=%lld",
             state,
@@ -862,12 +865,14 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                         mstp_ring_diag.tokens_rx++;
 #endif
 #if defined(ESP_PLATFORM)
-                        ESP_LOGI(
-                            "mstp_token",
-                            "TOKEN_RX src=%u dst=%u t=%lld",
-                            (unsigned)mstp_port->SourceAddress,
-                            (unsigned)mstp_port->DestinationAddress,
-                            (long long)esp_timer_get_time());
+                        if (!mstp_ring_join_logged) {
+                            ESP_LOGI(
+                                "mstp_token",
+                                "MSTP_RING_JOINED mac=%u token_src=%u",
+                                (unsigned)mstp_port->This_Station,
+                                (unsigned)mstp_port->SourceAddress);
+                            mstp_ring_join_logged = true;
+                        }
 #endif
                         mstp_port->ReceivedValidFrame = false;
                         mstp_port->FrameCount = 0;
@@ -884,7 +889,7 @@ bool MSTP_Master_Node_FSM(struct mstp_port_struct_t *mstp_port)
                             mstp_ring_diag.pfm_to_us++;
 #endif
 #if defined(ESP_PLATFORM)
-                            ESP_LOGI(
+                            ESP_LOGD(
                                 "mstp_pfm",
                                 "PFM_RX src=%u dst=%u t=%lld",
                                 (unsigned)mstp_port->SourceAddress,
